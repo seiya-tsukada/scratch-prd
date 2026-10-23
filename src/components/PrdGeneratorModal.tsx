@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Sparkles, X, AlertCircle, Loader2, Layers, ShieldCheck, Lightbulb, Rocket } from 'lucide-react';
 import {
   Note,
@@ -59,18 +59,31 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
   onClose,
   onGenerate,
 }) => {
-  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>(
-    notes.map((n) => n.id) // Default all selected
-  );
+  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [mode, setMode] = useState<PrdGenerationMode>(DEFAULT_GENERATION_MODE);
   const [detailLevel, setDetailLevel] = useState<PrdDetailLevel>(DEFAULT_DETAIL_LEVEL);
-  const [targetPrdId, setTargetPrdId] = useState<string>(defaultTargetPrdId || NEW_PRD_TARGET);
+  const [targetPrdId, setTargetPrdId] = useState<string>(NEW_PRD_TARGET);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
-  // フックは early return より前に宣言する必要がある
   const [elapsedTime, setElapsedTime] = useState(0);
 
+  // モーダルは常にマウントされているため、開くたびにフォームを初期化する。
+  // 既存PRDの再生成なら、そのPRDの参照メモ・モード・詳細度を引き継ぐ。
+  useEffect(() => {
+    if (!isOpen) return;
+    const targetPrd = existingPrds.find((p) => p.id === defaultTargetPrdId);
+    const noteIds = notes.map((n) => n.id);
+    const sourceNoteIds = targetPrd ? noteIds.filter((id) => targetPrd.sourceNoteIds?.includes(id)) : [];
+
+    setSelectedNoteIds(sourceNoteIds.length > 0 ? sourceNoteIds : noteIds);
+    setTargetPrdId(targetPrd ? targetPrd.id : NEW_PRD_TARGET);
+    setMode(targetPrd?.generationMode || DEFAULT_GENERATION_MODE);
+    setDetailLevel(targetPrd?.detailLevel || DEFAULT_DETAIL_LEVEL);
+    setError(null);
+  }, [isOpen]);
+
+  // フックは early return より前に宣言する必要がある
   if (!isOpen) return null;
 
   const toggleNote = (id: string) => {

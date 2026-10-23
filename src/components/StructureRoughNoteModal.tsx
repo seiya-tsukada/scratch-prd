@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Wand2, X, Check, Copy, Plus, Loader2, Sparkles } from 'lucide-react';
+import { Wand2, X, Check, Copy, Plus, Loader2, Sparkles, AlertCircle } from 'lucide-react';
 import { Note, Section } from '../types';
 import { MarkdownRenderer } from '../utils/markdown';
 import { getNoteShortLabel } from '../utils/note';
@@ -192,6 +192,13 @@ export const StructureRoughNoteModal: React.FC<StructureRoughNoteModalProps> = (
             )}
           </button>
         </div>
+
+        {error && (
+          <div className="px-6 py-2 border-b border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2 shrink-0">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
         {/* Content Body: Split View (Before vs After) */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden bg-zinc-50/40 dark:bg-zinc-950/20">
