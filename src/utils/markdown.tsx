@@ -1,9 +1,30 @@
 import React from 'react';
 
+/** PRD 本文中の分類タグ。上から順に判定する */
+const CLASSIFICATION_TAGS = [
+  {
+    token: '[FACT]',
+    label: 'FACT',
+    className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300',
+  },
+  {
+    token: '[PROPOSAL]',
+    label: 'PROPOSAL',
+    className: 'bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300',
+  },
+  {
+    token: '[OPEN_QUESTION]',
+    label: 'OPEN QUESTION',
+    className: 'bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300',
+  },
+];
+
+const EMPTY_CONTENT_MESSAGE = '内容がありません';
+
 // Lightweight, safe markdown renderer tailored for PRDs and notes
 export function MarkdownRenderer({ content }: { content: string }) {
   if (!content) {
-    return <p className="text-gray-400 italic">内容がありません</p>;
+    return <p className="text-gray-400 italic">{EMPTY_CONTENT_MESSAGE}</p>;
   }
 
   const lines = content.split('\n');
@@ -177,36 +198,14 @@ function formatInline(text: string): React.ReactNode[] {
             return <strong key={bIndex} className="font-semibold text-gray-900 dark:text-white">{inner}</strong>;
           }
 
-          // Badge tag styling: [FACT], [PROPOSAL], [OPEN_QUESTION]
-          if (bPart.includes('[FACT]')) {
-            const sub = bPart.replace('[FACT]', '');
+          // [FACT] などの分類タグをバッジ表示（最初に一致したタグのみ）
+          const tag = CLASSIFICATION_TAGS.find((t) => bPart.includes(t.token));
+          if (tag) {
             return (
               <React.Fragment key={bIndex}>
-                {sub}
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300 ml-1">
-                  FACT
-                </span>
-              </React.Fragment>
-            );
-          }
-          if (bPart.includes('[PROPOSAL]')) {
-            const sub = bPart.replace('[PROPOSAL]', '');
-            return (
-              <React.Fragment key={bIndex}>
-                {sub}
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-blue-100 text-blue-800 dark:bg-blue-950/60 dark:text-blue-300 ml-1">
-                  PROPOSAL
-                </span>
-              </React.Fragment>
-            );
-          }
-          if (bPart.includes('[OPEN_QUESTION]')) {
-            const sub = bPart.replace('[OPEN_QUESTION]', '');
-            return (
-              <React.Fragment key={bIndex}>
-                {sub}
-                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium bg-amber-100 text-amber-800 dark:bg-amber-950/60 dark:text-amber-300 ml-1">
-                  OPEN QUESTION
+                {bPart.replace(tag.token, '')}
+                <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[11px] font-medium ${tag.className} ml-1`}>
+                  {tag.label}
                 </span>
               </React.Fragment>
             );

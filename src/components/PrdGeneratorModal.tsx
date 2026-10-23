@@ -1,20 +1,5 @@
-import React, { useState } from 'react';
-import {
-  Sparkles,
-  X,
-  CheckCircle2,
-  AlertCircle,
-  FileText,
-  Sliders,
-  CheckSquare,
-  Square,
-  Loader2,
-  Layers,
-  ArrowRight,
-  ShieldCheck,
-  Lightbulb,
-  Rocket,
-} from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Sparkles, X, AlertCircle, Loader2, Layers, ShieldCheck, Lightbulb, Rocket } from 'lucide-react';
 import {
   Note,
   Section,
@@ -22,6 +7,36 @@ import {
   PrdGenerationMode,
   PrdDetailLevel,
 } from '../types';
+import { TIMING } from '../config/app';
+import {
+  DEFAULT_DETAIL_LEVEL,
+  DEFAULT_GENERATION_MODE,
+  NEW_PRD_TARGET,
+  PRD_DETAIL_LEVEL_LABELS,
+  PRD_DETAIL_LEVEL_ORDER,
+  PRD_MODE_META,
+  PRD_MODE_ORDER,
+} from '../config/prd';
+import { getNoteDisplayTitle } from '../utils/note';
+
+const MODE_ICONS: Record<PrdGenerationMode, React.ComponentType<{ className?: string }>> = {
+  strict: ShieldCheck,
+  suggest: Lightbulb,
+  expand: Rocket,
+};
+
+export interface PrdGenerateParams {
+  selectedNoteIds: string[];
+  mode: PrdGenerationMode;
+  detailLevel: PrdDetailLevel;
+  targetPrdId?: string;
+}
+
+const StepBadge: React.FC<{ step: number }> = ({ step }) => (
+  <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 text-xs font-bold flex items-center justify-center">
+    {step}
+  </span>
+);
 
 interface PrdGeneratorModalProps {
   isOpen: boolean;
@@ -31,12 +46,7 @@ interface PrdGeneratorModalProps {
   projectName: string;
   defaultTargetPrdId?: string | null;
   onClose: () => void;
-  onGenerate: (params: {
-    selectedNoteIds: string[];
-    mode: PrdGenerationMode;
-    detailLevel: PrdDetailLevel;
-    targetPrdId?: string;
-  }) => Promise<void>;
+  onGenerate: (params: PrdGenerateParams) => Promise<void>;
 }
 
 export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
@@ -49,18 +59,31 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
   onClose,
   onGenerate,
 }) => {
-  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>(
-    notes.map((n) => n.id) // Default all selected
-  );
-  const [mode, setMode] = useState<PrdGenerationMode>('suggest');
-  const [detailLevel, setDetailLevel] = useState<PrdDetailLevel>('standard');
-  const [targetPrdId, setTargetPrdId] = useState<string>(
-    defaultTargetPrdId || 'new'
-  );
+  const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
+  const [mode, setMode] = useState<PrdGenerationMode>(DEFAULT_GENERATION_MODE);
+  const [detailLevel, setDetailLevel] = useState<PrdDetailLevel>(DEFAULT_DETAIL_LEVEL);
+  const [targetPrdId, setTargetPrdId] = useState<string>(NEW_PRD_TARGET);
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationStep, setGenerationStep] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
+  const [elapsedTime, setElapsedTime] = useState(0);
 
+  // モーダルは常にマウントされているため、開くたびにフォームを初期化する。
+  // 既存PRDの再生成なら、そのPRDの参照メモ・モード・詳細度を引き継ぐ。
+  useEffect(() => {
+    if (!isOpen) return;
+    const targetPrd = existingPrds.find((p) => p.id === defaultTargetPrdId);
+    const noteIds = notes.map((n) => n.id);
+    const sourceNoteIds = targetPrd ? noteIds.filter((id) => targetPrd.sourceNoteIds?.includes(id)) : [];
+
+    setSelectedNoteIds(sourceNoteIds.length > 0 ? sourceNoteIds : noteIds);
+    setTargetPrdId(targetPrd ? targetPrd.id : NEW_PRD_TARGET);
+    setMode(targetPrd?.generationMode || DEFAULT_GENERATION_MODE);
+    setDetailLevel(targetPrd?.detailLevel || DEFAULT_DETAIL_LEVEL);
+    setError(null);
+  }, [isOpen]);
+
+  // フックは early return より前に宣言する必要がある
   if (!isOpen) return null;
 
   const toggleNote = (id: string) => {
@@ -71,8 +94,6 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
 
   const selectAll = () => setSelectedNoteIds(notes.map((n) => n.id));
   const deselectAll = () => setSelectedNoteIds([]);
-
-  const [elapsedTime, setElapsedTime] = useState(0);
 
   const handleStartGeneration = async () => {
     if (selectedNoteIds.length === 0) {
@@ -85,22 +106,20 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
     setElapsedTime(0);
     setGenerationStep('AI仕様書を高速生成中...');
 
+    const tickSeconds = TIMING.GENERATION_TIMER_INTERVAL_MS / 1000;
     const timer = setInterval(() => {
-      setElapsedTime((prev) => +(prev + 0.1).toFixed(1));
-    }, 100);
+      setElapsedTime((prev) => +(prev + tickSeconds).toFixed(1));
+    }, TIMING.GENERATION_TIMER_INTERVAL_MS);
 
     try {
       await onGenerate({
         selectedNoteIds,
         mode,
         detailLevel,
-        targetPrdId: targetPrdId === 'new' ? undefined : targetPrdId,
+        targetPrdId: targetPrdId === NEW_PRD_TARGET ? undefined : targetPrdId,
       });
-
-      clearInterval(timer);
       onClose();
     } catch (err: any) {
-      clearInterval(timer);
       console.error(err);
       setError(err.message || 'PRD生成中にエラーが発生しました。もう一度お試しください。');
     } finally {
@@ -158,9 +177,7 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
-                <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 text-xs font-bold flex items-center justify-center">
-                  1
-                </span>
+                <StepBadge step={1} />
                 <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
                   入力メモの選択 ({selectedNotesCount}/{notes.length}件選択中 • 約{totalCharacters}文字)
                 </span>
@@ -198,10 +215,7 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pl-2">
                       {secNotes.map((note) => {
                         const isSelected = selectedNoteIds.includes(note.id);
-                        const title =
-                          note.title.trim() ||
-                          note.content.split('\n')[0].replace(/^#+\s*/, '') ||
-                          '無題のメモ';
+                        const title = getNoteDisplayTitle(note.title, note.content);
 
                         return (
                           <div
@@ -239,71 +253,41 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
           {/* 2. Generation Mode Selection */}
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 text-xs font-bold flex items-center justify-center">
-                2
-              </span>
+              <StepBadge step={2} />
               <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
                 AI生成モードを選択
               </span>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              {/* Mode A: Strict */}
-              <div
-                onClick={() => setMode('strict')}
-                className={`p-3 rounded-xl border cursor-pointer transition-all ${
-                  mode === 'strict'
-                    ? 'border-emerald-500 bg-emerald-50/40 dark:bg-emerald-950/20 ring-1 ring-emerald-500'
-                    : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 bg-white dark:bg-zinc-800/50'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 mb-1">
-                  <ShieldCheck className="w-4 h-4" />
-                  <span className="text-xs font-bold">厳密 (Strict)</span>
-                </div>
-                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-normal">
-                  メモに書かれた事実のみを使用。AIによる勝手な創作や推測を行わず、不足箇所は「未定」「要確認」と明記します。
-                </p>
-              </div>
-
-              {/* Mode B: Organize & Suggest (Default) */}
-              <div
-                onClick={() => setMode('suggest')}
-                className={`p-3 rounded-xl border cursor-pointer transition-all relative ${
-                  mode === 'suggest'
-                    ? 'border-indigo-500 bg-indigo-50/40 dark:bg-indigo-950/20 ring-1 ring-indigo-500'
-                    : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 bg-white dark:bg-zinc-800/50'
-                }`}
-              >
-                <div className="absolute -top-2 right-2 px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[9px] font-bold">
-                  おすすめ
-                </div>
-                <div className="flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400 mb-1">
-                  <Lightbulb className="w-4 h-4" />
-                  <span className="text-xs font-bold">整理＆提案 (Suggest)</span>
-                </div>
-                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-normal">
-                  原文の意図を汲んで構造化し、不足部分を明確な「AI提案ラベル」付きで補足します。MVPの推奨設定です。
-                </p>
-              </div>
-
-              {/* Mode C: Expand */}
-              <div
-                onClick={() => setMode('expand')}
-                className={`p-3 rounded-xl border cursor-pointer transition-all ${
-                  mode === 'expand'
-                    ? 'border-purple-500 bg-purple-50/40 dark:bg-purple-950/20 ring-1 ring-purple-500'
-                    : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 bg-white dark:bg-zinc-800/50'
-                }`}
-              >
-                <div className="flex items-center gap-1.5 text-purple-600 dark:text-purple-400 mb-1">
-                  <Rocket className="w-4 h-4" />
-                  <span className="text-xs font-bold">仮説拡張 (Expand)</span>
-                </div>
-                <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-normal">
-                  機能案、ユーザー仮説、KPI候補、リスク、検証方法まで仮説として積極的に提案し、企画を広げます。
-                </p>
-              </div>
+              {PRD_MODE_ORDER.map((modeKey) => {
+                const meta = PRD_MODE_META[modeKey];
+                const ModeIcon = MODE_ICONS[modeKey];
+                return (
+                  <div
+                    key={modeKey}
+                    onClick={() => setMode(modeKey)}
+                    className={`p-3 rounded-xl border cursor-pointer transition-all${meta.recommended ? ' relative' : ''} ${
+                      mode === modeKey
+                        ? meta.cardSelectedClass
+                        : 'border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 bg-white dark:bg-zinc-800/50'
+                    }`}
+                  >
+                    {meta.recommended && (
+                      <div className="absolute -top-2 right-2 px-1.5 py-0.2 rounded-full bg-indigo-600 text-white text-[9px] font-bold">
+                        おすすめ
+                      </div>
+                    )}
+                    <div className={`flex items-center gap-1.5 ${meta.cardAccentClass} mb-1`}>
+                      <ModeIcon className="w-4 h-4" />
+                      <span className="text-xs font-bold">{meta.cardTitle}</span>
+                    </div>
+                    <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-normal">
+                      {meta.cardDescription}
+                    </p>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -312,15 +296,13 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
             {/* Detail Level */}
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 text-xs font-bold flex items-center justify-center">
-                  3
-                </span>
+                <StepBadge step={3} />
                 <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
                   PRDの詳細度
                 </span>
               </div>
               <div className="flex items-center gap-2">
-                {(['brief', 'standard', 'detailed'] as PrdDetailLevel[]).map((lvl) => (
+                {PRD_DETAIL_LEVEL_ORDER.map((lvl) => (
                   <button
                     key={lvl}
                     type="button"
@@ -331,7 +313,7 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
                         : 'bg-white dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50'
                     }`}
                   >
-                    {lvl === 'brief' ? '簡易' : lvl === 'standard' ? '標準' : '詳細'}
+                    {PRD_DETAIL_LEVEL_LABELS[lvl]}
                   </button>
                 ))}
               </div>
@@ -340,9 +322,7 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
             {/* Target PRD (New or Update Existing) */}
             <div>
               <div className="flex items-center gap-2 mb-2">
-                <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 text-xs font-bold flex items-center justify-center">
-                  4
-                </span>
+                <StepBadge step={4} />
                 <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
                   保存先
                 </span>
@@ -352,7 +332,7 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
                 onChange={(e) => setTargetPrdId(e.target.value)}
                 className="w-full py-2 px-3 text-xs rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 outline-none"
               >
-                <option value="new">+ 新しいPRDドキュメントとして作成</option>
+                <option value={NEW_PRD_TARGET}>+ 新しいPRDドキュメントとして作成</option>
                 {existingPrds.map((p) => (
                   <option key={p.id} value={p.id}>
                     「{p.title}」の新バージョン (v{(p.version || 1) + 1}) として更新

@@ -1,20 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import {
-  Wand2,
-  X,
-  Check,
-  Copy,
-  Plus,
-  ArrowRight,
-  Loader2,
-  FileText,
-  Sparkles,
-  AlertCircle,
-  Eye,
-  RefreshCw,
-} from 'lucide-react';
+import { Wand2, X, Check, Copy, Plus, Loader2, Sparkles, AlertCircle } from 'lucide-react';
 import { Note, Section } from '../types';
 import { MarkdownRenderer } from '../utils/markdown';
+import { getNoteShortLabel } from '../utils/note';
+import { useCopyFeedback } from '../hooks/useCopyFeedback';
+import { structureRoughNote } from '../services/apiClient';
+import { TIMING, UNTITLED_NOTE_LABEL } from '../config/app';
+
+/** 「新しいメモとして保存」時の保存先として優先するセクション名のキーワード */
+const STRUCTURED_NOTE_SECTION_KEYWORDS = ['Features', 'PRD'];
+const DEFAULT_STRUCTURED_TITLE = '構造化PRDメモ';
 
 interface StructureRoughNoteModalProps {
   isOpen: boolean;
@@ -44,37 +39,38 @@ export const StructureRoughNoteModal: React.FC<StructureRoughNoteModalProps> = (
   const [structuredContent, setStructuredContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
+  const { copied, copy } = useCopyFeedback();
   const [applied, setApplied] = useState(false);
 
-  // When activeNoteId changes or modal opens, initialize with active note
+  const resetResult = () => {
+    setStructuredTitle('');
+    setStructuredContent('');
+    setError(null);
+    setApplied(false);
+  };
+
+  const loadNote = (note: Note | undefined) => {
+    if (!note) return;
+    setRawTitle(note.title);
+    setRawContent(note.content);
+  };
+
+  // モーダルを開いたとき・アクティブなメモが変わったときに対象メモを読み込む
   useEffect(() => {
     if (isOpen) {
       const targetId = activeNoteId || notes[0]?.id || '';
       setSelectedNoteId(targetId);
-      const note = notes.find((n) => n.id === targetId);
-      if (note) {
-        setRawTitle(note.title);
-        setRawContent(note.content);
-      }
-      setStructuredTitle('');
-      setStructuredContent('');
-      setError(null);
-      setApplied(false);
+      loadNote(notes.find((n) => n.id === targetId));
+      resetResult();
     }
   }, [isOpen, activeNoteId, notes]);
 
-  // Switch selected note
   const handleSelectNote = (id: string) => {
     setSelectedNoteId(id);
     const note = notes.find((n) => n.id === id);
     if (note) {
-      setRawTitle(note.title);
-      setRawContent(note.content);
-      setStructuredTitle('');
-      setStructuredContent('');
-      setError(null);
-      setApplied(false);
+      loadNote(note);
+      resetResult();
     }
   };
 
@@ -89,22 +85,12 @@ export const StructureRoughNoteModal: React.FC<StructureRoughNoteModalProps> = (
     setApplied(false);
 
     try {
-      const res = await fetch('/api/structure-rough-note', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          title: rawTitle,
-          content: rawContent,
-          projectName,
-        }),
+      const data = await structureRoughNote({
+        title: rawTitle,
+        content: rawContent,
+        projectName,
       });
-
-      if (!res.ok) {
-        throw new Error(`サーバーエラー: ${res.statusText}`);
-      }
-
-      const data = await res.json();
-      setStructuredTitle(data.structuredTitle || rawTitle || '構造化PRDメモ');
+      setStructuredTitle(data.structuredTitle || rawTitle || DEFAULT_STRUCTURED_TITLE);
       setStructuredContent(data.structuredContent || '');
     } catch (err: any) {
       console.error(err);
@@ -116,24 +102,20 @@ export const StructureRoughNoteModal: React.FC<StructureRoughNoteModalProps> = (
 
   const handleCopy = () => {
     if (!structuredContent) return;
-    navigator.clipboard.writeText(structuredContent);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copy(structuredContent);
   };
 
   const handleApplyToActive = () => {
     if (!selectedNoteId || !structuredContent) return;
     onApplyToNote(selectedNoteId, structuredTitle, structuredContent);
     setApplied(true);
-    setTimeout(() => {
-      onClose();
-    }, 800);
+    setTimeout(onClose, TIMING.STRUCTURE_APPLY_CLOSE_DELAY_MS);
   };
 
   const handleSaveAsNew = () => {
     if (!structuredContent) return;
     const targetSec =
-      sections.find((s) => s.name.includes('Features') || s.name.includes('PRD')) ||
+      sections.find((s) => STRUCTURED_NOTE_SECTION_KEYWORDS.some((k) => s.name.includes(k))) ||
       sections[0];
     onSaveAsNewNote(targetSec ? targetSec.id : '', structuredTitle, structuredContent);
     onClose();
@@ -185,7 +167,7 @@ export const StructureRoughNoteModal: React.FC<StructureRoughNoteModalProps> = (
             >
               {notes.map((n) => (
                 <option key={n.id} value={n.id}>
-                  {n.title || n.content.slice(0, 20) || '無題のメモ'}
+                  {getNoteShortLabel(n, UNTITLED_NOTE_LABEL)}
                 </option>
               ))}
             </select>
@@ -210,6 +192,13 @@ export const StructureRoughNoteModal: React.FC<StructureRoughNoteModalProps> = (
             )}
           </button>
         </div>
+
+        {error && (
+          <div className="px-6 py-2 border-b border-rose-200 dark:border-rose-900 bg-rose-50 dark:bg-rose-950/40 text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2 shrink-0">
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span>{error}</span>
+          </div>
+        )}
 
         {/* Content Body: Split View (Before vs After) */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden bg-zinc-50/40 dark:bg-zinc-950/20">
