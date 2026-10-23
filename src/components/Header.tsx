@@ -18,6 +18,47 @@ import {
 } from 'lucide-react';
 import { Project, PaneCount, SaveStatus } from '../types';
 
+const ThreeColumnsIcon = () => (
+  <div className="flex gap-0.5 w-3.5 h-3.5 items-center justify-center">
+    <div className="w-1 h-3 bg-current rounded-xs" />
+    <div className="w-1 h-3 bg-current rounded-xs" />
+    <div className="w-1 h-3 bg-current rounded-xs" />
+  </div>
+);
+
+const PANE_LAYOUT_OPTIONS: {
+  count: PaneCount;
+  title: string;
+  hideOnMobile: boolean;
+  icon: React.ReactNode;
+}[] = [
+  { count: 1, title: '1ペイン (単一表示)', hideOnMobile: false, icon: <Square className="w-3.5 h-3.5" /> },
+  { count: 2, title: '2ペイン (左右分割)', hideOnMobile: false, icon: <Columns className="w-3.5 h-3.5" /> },
+  { count: 3, title: '3ペイン (3分割表示)', hideOnMobile: true, icon: <ThreeColumnsIcon /> },
+  { count: 4, title: '4ペイン (2x2 グリッド分割)', hideOnMobile: true, icon: <LayoutGrid className="w-3.5 h-3.5" /> },
+];
+
+const SAVE_STATUS_BADGE: Record<SaveStatus, React.ReactNode> = {
+  saving: (
+    <>
+      <Loader2 className="w-3 h-3 text-amber-500 animate-spin" />
+      <span className="text-zinc-600 dark:text-zinc-400">保存中...</span>
+    </>
+  ),
+  saved: (
+    <>
+      <CheckCircle2 className="w-3 h-3 text-emerald-500" />
+      <span className="text-zinc-600 dark:text-zinc-400">自動保存完了</span>
+    </>
+  ),
+  error: (
+    <>
+      <AlertCircle className="w-3 h-3 text-rose-500" />
+      <span className="text-rose-500 font-semibold">保存失敗</span>
+    </>
+  ),
+};
+
 interface HeaderProps {
   currentProject: Project;
   projects: Project[];
@@ -190,24 +231,7 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Save Status Badge */}
         <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60">
-          {saveStatus === 'saving' && (
-            <>
-              <Loader2 className="w-3 h-3 text-amber-500 animate-spin" />
-              <span className="text-zinc-600 dark:text-zinc-400">保存中...</span>
-            </>
-          )}
-          {saveStatus === 'saved' && (
-            <>
-              <CheckCircle2 className="w-3 h-3 text-emerald-500" />
-              <span className="text-zinc-600 dark:text-zinc-400">自動保存完了</span>
-            </>
-          )}
-          {saveStatus === 'error' && (
-            <>
-              <AlertCircle className="w-3 h-3 text-rose-500" />
-              <span className="text-rose-500 font-semibold">保存失敗</span>
-            </>
-          )}
+          {SAVE_STATUS_BADGE[saveStatus]}
         </div>
       </div>
 
@@ -215,58 +239,21 @@ export const Header: React.FC<HeaderProps> = ({
       <div className="flex items-center gap-2">
         {/* Pane Split Switcher Buttons */}
         <div className="flex items-center p-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700/60">
-          <button
-            type="button"
-            onClick={() => onChangePaneCount(1)}
-            className={`p-1.5 rounded-md transition-all ${
-              paneCount === 1
-                ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200'
-            }`}
-            title="1ペイン (単一表示)"
-          >
-            <Square className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onChangePaneCount(2)}
-            className={`p-1.5 rounded-md transition-all ${
-              paneCount === 2
-                ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200'
-            }`}
-            title="2ペイン (左右分割)"
-          >
-            <Columns className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => onChangePaneCount(3)}
-            className={`hidden md:block p-1.5 rounded-md transition-all ${
-              paneCount === 3
-                ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200'
-            }`}
-            title="3ペイン (3分割表示)"
-          >
-            <div className="flex gap-0.5 w-3.5 h-3.5 items-center justify-center">
-              <div className="w-1 h-3 bg-current rounded-xs" />
-              <div className="w-1 h-3 bg-current rounded-xs" />
-              <div className="w-1 h-3 bg-current rounded-xs" />
-            </div>
-          </button>
-          <button
-            type="button"
-            onClick={() => onChangePaneCount(4)}
-            className={`hidden md:block p-1.5 rounded-md transition-all ${
-              paneCount === 4
-                ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200'
-            }`}
-            title="4ペイン (2x2 グリッド分割)"
-          >
-            <LayoutGrid className="w-3.5 h-3.5" />
-          </button>
+          {PANE_LAYOUT_OPTIONS.map(({ count, title, hideOnMobile, icon }) => (
+            <button
+              key={count}
+              type="button"
+              onClick={() => onChangePaneCount(count)}
+              className={`${hideOnMobile ? 'hidden md:block ' : ''}p-1.5 rounded-md transition-all ${
+                paneCount === count
+                  ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                  : 'text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200'
+              }`}
+              title={title}
+            >
+              {icon}
+            </button>
+          ))}
         </div>
 
         {/* Supabase Arch Info Button */}

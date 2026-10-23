@@ -17,10 +17,26 @@ import {
   Sparkles,
   ExternalLink,
   Layers,
-  Database,
-  Tag,
 } from 'lucide-react';
 import { Section, Note, PrdDocument, PaneInfo } from '../types';
+import { DATE_LOCALE, INBOX_SECTION_KEYWORD } from '../config/app';
+import { getPrdModeMeta } from '../config/prd';
+import { getNoteDisplayTitle } from '../utils/note';
+
+/** セクション名に含まれるキーワード（小文字比較）からアイコンを決める。上から順に評価 */
+const SECTION_ICON_RULES: { keywords: string[]; Icon: React.ComponentType<{ className?: string }> }[] = [
+  { keywords: ['inbox', '思いつき'], Icon: Inbox },
+  { keywords: ['problem', 'user', '課題'], Icon: Users },
+  { keywords: ['feature', 'idea', '機能'], Icon: Lightbulb },
+  { keywords: ['prd', '仕様'], Icon: FileText },
+];
+
+const SectionIcon: React.FC<{ name: string }> = ({ name }) => {
+  const lower = name.toLowerCase();
+  const Icon =
+    SECTION_ICON_RULES.find((rule) => rule.keywords.some((k) => lower.includes(k)))?.Icon ?? Folder;
+  return <Icon className="w-3.5 h-3.5" />;
+};
 
 interface SidebarProps {
   sections: Section[];
@@ -80,16 +96,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return map;
   }, [panes]);
 
-  // Section icon resolver
-  const getSectionIcon = (name: string) => {
-    const lower = name.toLowerCase();
-    if (lower.includes('inbox') || lower.includes('思いつき')) return <Inbox className="w-3.5 h-3.5" />;
-    if (lower.includes('problem') || lower.includes('user') || lower.includes('課題')) return <Users className="w-3.5 h-3.5" />;
-    if (lower.includes('feature') || lower.includes('idea') || lower.includes('機能')) return <Lightbulb className="w-3.5 h-3.5" />;
-    if (lower.includes('prd') || lower.includes('仕様')) return <FileText className="w-3.5 h-3.5" />;
-    return <Folder className="w-3.5 h-3.5" />;
-  };
-
   const toggleSection = (id: string) => {
     setCollapsedSections((prev) => ({ ...prev, [id]: !prev[id] }));
   };
@@ -127,7 +133,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         <button
           type="button"
           onClick={() => {
-            const inbox = sections.find((s) => s.name.toLowerCase().includes('inbox')) || sections[0];
+            const inbox = sections.find((s) => s.name.toLowerCase().includes(INBOX_SECTION_KEYWORD)) || sections[0];
             onCreateNote(inbox ? inbox.id : undefined);
           }}
           className="w-full flex items-center justify-center gap-2 py-2 px-3 rounded-lg text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 shadow-xs shadow-indigo-500/20 active:scale-[0.98] transition-all cursor-pointer"
@@ -230,7 +236,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           )}
                         </span>
                         <span className="text-zinc-500 dark:text-zinc-400">
-                          {getSectionIcon(section.name)}
+                          <SectionIcon name={section.name} />
                         </span>
                         <span className="font-medium truncate">{section.name}</span>
                         <span className="text-[10px] text-zinc-400 ml-1 px-1 rounded bg-zinc-200/60 dark:bg-zinc-800/80">
@@ -323,10 +329,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <div className="pl-5 pr-1 py-0.5 space-y-0.5">
                       {sectionNotes.map((note) => {
                         const openPanes = openNotePanes.get(note.id);
-                        const displayTitle =
-                          note.title.trim() ||
-                          note.content.split('\n')[0].replace(/^#+\s*/, '').trim() ||
-                          '無題のメモ';
+                        const displayTitle = getNoteDisplayTitle(note.title, note.content);
 
                         return (
                           <div
@@ -467,19 +470,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
           <div className="space-y-1">
             {prds.map((prd) => {
-              const modeLabel =
-                prd.generationMode === 'strict'
-                  ? '厳密'
-                  : prd.generationMode === 'expand'
-                  ? '拡張'
-                  : '提案';
-
-              const modeColor =
-                prd.generationMode === 'strict'
-                  ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300'
-                  : prd.generationMode === 'expand'
-                  ? 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300'
-                  : 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300';
+              const modeMeta = getPrdModeMeta(prd.generationMode);
 
               return (
                 <div
@@ -496,11 +487,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5 text-[10px]">
-                    <span className={`px-1.5 py-0.2 rounded font-medium ${modeColor}`}>
-                      {modeLabel}モード
+                    <span className={`px-1.5 py-0.2 rounded font-medium ${modeMeta.badgeClass}`}>
+                      {modeMeta.shortLabel}モード
                     </span>
                     <span className="text-zinc-400">
-                      {new Date(prd.updatedAt).toLocaleDateString('ja-JP', {
+                      {new Date(prd.updatedAt).toLocaleDateString(DATE_LOCALE, {
                         month: 'short',
                         day: 'numeric',
                       })}

@@ -1,6 +1,0 @@
-{
-  "name": "Idea Workspace",
-  "description": "思いつきを逃さず、断片的な思考を開発・検証できるPRDへと育てる個人向けプロダクト開発ワークスペース",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}

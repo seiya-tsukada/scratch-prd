@@ -11,18 +11,32 @@ import {
   History,
   Tag,
   HelpCircle,
-  AlertTriangle,
   Lightbulb,
   ShieldCheck,
   CheckCircle2,
   ExternalLink,
   Edit3,
-  Eye,
   Save,
   Layers,
 } from 'lucide-react';
-import { PrdDocument, Note } from '../types';
+import { PrdDocument, Note, PrdGenerationMode } from '../types';
 import { MarkdownRenderer } from '../utils/markdown';
+import { useCopyFeedback } from '../hooks/useCopyFeedback';
+import { DATE_LOCALE, UNTITLED_NOTE_LABEL } from '../config/app';
+import {
+  AI_CODING_PROMPT_HEADER,
+  OPEN_QUESTION_URGENCY_LABELS,
+  PROPOSAL_IMPACT_LABELS,
+  getPrdModeMeta,
+} from '../config/prd';
+
+type ViewerTab = 'preview' | 'inspector' | 'sources' | 'history';
+
+const MODE_BADGE_ICONS: Record<PrdGenerationMode, React.ComponentType<{ className?: string }>> = {
+  strict: ShieldCheck,
+  suggest: CheckCircle2,
+  expand: Lightbulb,
+};
 
 interface PrdViewerModalProps {
   prd: PrdDocument;
@@ -43,12 +57,11 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
   onRegenerate,
   onOpenNoteInPane,
 }) => {
-  const [activeTab, setActiveTab] = useState<'preview' | 'inspector' | 'sources' | 'history'>('preview');
+  const [activeTab, setActiveTab] = useState<ViewerTab>('preview');
   const [isEditingMarkdown, setIsEditingMarkdown] = useState(false);
   const [editableContent, setEditableContent] = useState(prd.content);
-  const [copiedMd, setCopiedMd] = useState(false);
-  const [copiedAiPrompt, setCopiedAiPrompt] = useState(false);
-  const [selectedVersionIndex, setSelectedVersionIndex] = useState<number | null>(null);
+  const { copied: copiedMd, copy: copyMarkdown } = useCopyFeedback();
+  const { copied: copiedAiPrompt, copy: copyAiPrompt } = useCopyFeedback();
 
   // Source notes
   const sourceNotes = notes.filter((n) => prd.sourceNoteIds?.includes(n.id));
@@ -59,33 +72,10 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
     setIsEditingMarkdown(false);
   };
 
-  // Copy standard Markdown
-  const handleCopyMarkdown = () => {
-    navigator.clipboard.writeText(editableContent);
-    setCopiedMd(true);
-    setTimeout(() => setCopiedMd(false), 2000);
-  };
+  const handleCopyMarkdown = () => copyMarkdown(editableContent);
 
-  // Copy AI Coding prompt format (Cursor, Claude Code, Windsurf)
-  const handleCopyAiPrompt = () => {
-    const prompt = `# Product Requirements Document & Implementation Guide
-You are an expert full-stack engineer and software architect.
-Implement the following specifications precisely according to the requirements, data model, and constraints below.
-
-## Rules for AI Coding Agent:
-1. Treat confirmed facts as hard requirements.
-2. Verify all edge cases and error states specified in the PRD.
-3. Write clean, modular, type-safe TypeScript code with comprehensive testability.
-4. Keep the UI aligned with modern, accessible design standards.
-
----
-
-${editableContent}`;
-
-    navigator.clipboard.writeText(prompt);
-    setCopiedAiPrompt(true);
-    setTimeout(() => setCopiedAiPrompt(false), 2000);
-  };
+  // AIコーディングツール (Cursor, Claude Code, Windsurf) 向けのプロンプト形式
+  const handleCopyAiPrompt = () => copyAiPrompt(AI_CODING_PROMPT_HEADER + editableContent);
 
   // Download .md file
   const handleDownloadMd = () => {
@@ -98,14 +88,25 @@ ${editableContent}`;
     URL.revokeObjectURL(url);
   };
 
-  const modeBadge =
-    prd.generationMode === 'strict'
-      ? { label: '厳密モード (Strict)', color: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-300', icon: ShieldCheck }
-      : prd.generationMode === 'expand'
-      ? { label: '仮説拡張モード (Expand)', color: 'bg-purple-100 text-purple-800 dark:bg-purple-950/60 dark:text-purple-300', icon: Lightbulb }
-      : { label: '整理＆提案モード (Suggest)', color: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-300', icon: CheckCircle2 };
+  const modeMeta = getPrdModeMeta(prd.generationMode);
 
-  const ModeIcon = modeBadge.icon;
+  const tabs: {
+    key: ViewerTab;
+    label: string;
+    Icon: React.ComponentType<{ className?: string }>;
+    badge?: number;
+  }[] = [
+    { key: 'preview', label: '仕様書 (PRD)', Icon: FileText },
+    {
+      key: 'inspector',
+      label: 'AI分類インスペクター',
+      Icon: Tag,
+      badge: (prd.facts?.length || 0) + (prd.proposals?.length || 0) + (prd.openQuestions?.length || 0),
+    },
+    { key: 'sources', label: `参照ノート一覧 (${sourceNotes.length})`, Icon: Layers },
+    { key: 'history', label: `バージョン履歴 (${prd.versions?.length || 0})`, Icon: History },
+  ];
+  const ModeIcon = MODE_BADGE_ICONS[prd.generationMode] ?? MODE_BADGE_ICONS.suggest;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-zinc-900/60 backdrop-blur-xs">
@@ -129,12 +130,12 @@ ${editableContent}`;
                 </span>
               </div>
               <div className="flex items-center gap-2 text-xs text-zinc-500 mt-0.5">
-                <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-semibold ${modeBadge.color}`}>
+                <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-semibold ${modeMeta.badgeClass}`}>
                   <ModeIcon className="w-3 h-3" />
-                  {modeBadge.label}
+                  {modeMeta.badgeLabel}
                 </span>
                 <span>•</span>
-                <span>{new Date(prd.updatedAt).toLocaleString('ja-JP')}</span>
+                <span>{new Date(prd.updatedAt).toLocaleString(DATE_LOCALE)}</span>
                 <span>•</span>
                 <span>参照ノート: {prd.sourceNoteIds?.length || 0}件</span>
               </div>
@@ -209,60 +210,26 @@ ${editableContent}`;
         {/* Tab Navigation */}
         <div className="px-6 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setActiveTab('preview')}
-              className={`py-3 px-3.5 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition-colors ${
-                activeTab === 'preview'
-                  ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
-              }`}
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>仕様書 (PRD)</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('inspector')}
-              className={`py-3 px-3.5 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition-colors ${
-                activeTab === 'inspector'
-                  ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
-              }`}
-            >
-              <Tag className="w-3.5 h-3.5" />
-              <span>AI分類インスペクター</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
-                {(prd.facts?.length || 0) + (prd.proposals?.length || 0) + (prd.openQuestions?.length || 0)}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('sources')}
-              className={`py-3 px-3.5 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition-colors ${
-                activeTab === 'sources'
-                  ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
-              }`}
-            >
-              <Layers className="w-3.5 h-3.5" />
-              <span>参照ノート一覧 ({sourceNotes.length})</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('history')}
-              className={`py-3 px-3.5 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition-colors ${
-                activeTab === 'history'
-                  ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
-              }`}
-            >
-              <History className="w-3.5 h-3.5" />
-              <span>バージョン履歴 ({prd.versions?.length || 0})</span>
-            </button>
+            {tabs.map(({ key, label, Icon, badge }) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() => setActiveTab(key)}
+                className={`py-3 px-3.5 text-xs font-semibold border-b-2 flex items-center gap-1.5 transition-colors ${
+                  activeTab === key
+                    ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400'
+                    : 'border-transparent text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{label}</span>
+                {badge !== undefined && (
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-400">
+                    {badge}
+                  </span>
+                )}
+              </button>
+            ))}
           </div>
 
           {/* Quick Edit Mode Toggle for Preview Tab */}
@@ -409,7 +376,7 @@ ${editableContent}`;
                                 : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
                             }`}
                           >
-                            重要度: {prop.impact === 'high' ? '高' : prop.impact === 'medium' ? '中' : '低'}
+                            重要度: {PROPOSAL_IMPACT_LABELS[prop.impact] ?? PROPOSAL_IMPACT_LABELS.low}
                           </span>
                         )}
                       </div>
@@ -460,7 +427,9 @@ ${editableContent}`;
                               : 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400'
                           }`}
                         >
-                          {oq.urgency === 'critical' ? '至急確認' : '通常確認'}
+                          {oq.urgency === 'critical'
+                            ? OPEN_QUESTION_URGENCY_LABELS.critical
+                            : OPEN_QUESTION_URGENCY_LABELS.normal}
                         </span>
                       </div>
                       <h5 className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
@@ -492,10 +461,10 @@ ${editableContent}`;
                     <div>
                       <div className="flex items-center justify-between text-xs mb-1.5">
                         <span className="font-bold text-zinc-900 dark:text-zinc-100 truncate">
-                          {note.title || '無題のメモ'}
+                          {note.title || UNTITLED_NOTE_LABEL}
                         </span>
                         <span className="text-[10px] text-zinc-400">
-                          {new Date(note.updatedAt).toLocaleDateString('ja-JP')}
+                          {new Date(note.updatedAt).toLocaleDateString(DATE_LOCALE)}
                         </span>
                       </div>
                       <p className="text-xs text-zinc-600 dark:text-zinc-400 line-clamp-4 leading-relaxed font-sans whitespace-pre-wrap">
@@ -541,7 +510,7 @@ ${editableContent}`;
                     </span>
                     <span className="font-semibold text-zinc-800 dark:text-zinc-200">{prd.title}</span>
                   </div>
-                  <span className="text-zinc-400 text-[11px]">{new Date(prd.updatedAt).toLocaleString('ja-JP')}</span>
+                  <span className="text-zinc-400 text-[11px]">{new Date(prd.updatedAt).toLocaleString(DATE_LOCALE)}</span>
                 </div>
                 <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">
                   現在の最新版仕様書です。
@@ -563,7 +532,7 @@ ${editableContent}`;
                         <span className="font-semibold text-zinc-800 dark:text-zinc-200">{ver.title}</span>
                         <span className="text-[10px] text-zinc-400">({ver.generationMode}モード)</span>
                       </div>
-                      <span className="text-zinc-400 text-[11px]">{new Date(ver.createdAt).toLocaleString('ja-JP')}</span>
+                      <span className="text-zinc-400 text-[11px]">{new Date(ver.createdAt).toLocaleString(DATE_LOCALE)}</span>
                     </div>
 
                     <div className="flex items-center justify-between pt-2 border-t border-zinc-100 dark:border-zinc-800">

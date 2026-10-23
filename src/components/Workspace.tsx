@@ -17,6 +17,15 @@ interface WorkspaceProps {
   onStructureNote?: (noteId: string) => void;
 }
 
+/** ペイン数ごとのグリッドレイアウト */
+const GRID_CLASSES: Record<PaneCount, string> = {
+  1: 'grid-cols-1 grid-rows-1',
+  2: 'grid-cols-1 md:grid-cols-2 grid-rows-1',
+  3: 'grid-cols-1 md:grid-cols-3 grid-rows-1',
+  4: 'grid-cols-1 md:grid-cols-2 grid-rows-2',
+};
+const DEFAULT_GRID_CLASS = 'grid-cols-1 md:grid-cols-2';
+
 export const Workspace: React.FC<WorkspaceProps> = ({
   paneCount,
   panes,
@@ -31,52 +40,30 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   onMoveNote,
   onStructureNote,
 }) => {
-  // Determine grid CSS class based on paneCount
-  const getGridClasses = () => {
-    switch (paneCount) {
-      case 1:
-        return 'grid-cols-1 grid-rows-1';
-      case 2:
-        return 'grid-cols-1 md:grid-cols-2 grid-rows-1';
-      case 3:
-        return 'grid-cols-1 md:grid-cols-3 grid-rows-1';
-      case 4:
-        return 'grid-cols-1 md:grid-cols-2 grid-rows-2';
-      default:
-        return 'grid-cols-1 md:grid-cols-2';
-    }
-  };
-
-  // Slices panes to current active count
   const activePanes = panes.slice(0, paneCount);
+  const gridClass = GRID_CLASSES[paneCount] ?? DEFAULT_GRID_CLASS;
 
   return (
     <main className="flex-1 min-w-0 h-[calc(100vh-3.5rem)] p-2.5 sm:p-3 overflow-hidden bg-zinc-100/60 dark:bg-zinc-950/40">
-      <div className={`w-full h-full grid gap-2.5 sm:gap-3 ${getGridClasses()}`}>
-        {activePanes.map((pane, index) => {
-          const currentNote = notes.find((n) => n.id === pane.noteId) || null;
-          const isActive = activePaneId === pane.id;
-
-          return (
-            <div key={pane.id} className="min-h-0 min-w-0 h-full">
-              <NotePane
-                paneIndex={index}
-                paneId={pane.id}
-                note={currentNote}
-                allNotes={notes}
-                sections={sections}
-                isActive={isActive}
-                onActivate={() => onActivatePane(pane.id)}
-                onSelectNote={(noteId) => onSelectNoteInPane(index, noteId)}
-                onCreateNoteInPane={() => onCreateNoteInPane(index)}
-                onUpdateNote={onUpdateNote}
-                onDeleteNote={onDeleteNote}
-                onMoveNote={onMoveNote}
-                onStructureNote={onStructureNote}
-              />
-            </div>
-          );
-        })}
+      <div className={`w-full h-full grid gap-2.5 sm:gap-3 ${gridClass}`}>
+        {activePanes.map((pane, index) => (
+          <div key={pane.id} className="min-h-0 min-w-0 h-full">
+            <NotePane
+              paneIndex={index}
+              note={notes.find((n) => n.id === pane.noteId) || null}
+              allNotes={notes}
+              sections={sections}
+              isActive={activePaneId === pane.id}
+              onActivate={() => onActivatePane(pane.id)}
+              onSelectNote={(noteId) => onSelectNoteInPane(index, noteId)}
+              onCreateNoteInPane={() => onCreateNoteInPane(index)}
+              onUpdateNote={onUpdateNote}
+              onDeleteNote={onDeleteNote}
+              onMoveNote={onMoveNote}
+              onStructureNote={onStructureNote}
+            />
+          </div>
+        ))}
       </div>
     </main>
   );

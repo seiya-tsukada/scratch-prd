@@ -4,8 +4,6 @@ import {
   Copy,
   Check,
   Trash2,
-  Maximize2,
-  Minimize2,
   ChevronDown,
   Eye,
   Edit3,
@@ -25,10 +23,50 @@ import {
 } from 'lucide-react';
 import { Note, Section } from '../types';
 import { MarkdownRenderer } from '../utils/markdown';
+import { getFirstLineText, getNoteShortLabel } from '../utils/note';
+import { useCopyFeedback } from '../hooks/useCopyFeedback';
+import { DATE_LOCALE, TIMING, UNTITLED_NOTE_LABEL } from '../config/app';
+
+type ViewMode = 'edit' | 'preview' | 'split';
+
+const VIEW_MODE_OPTIONS: {
+  mode: ViewMode;
+  title: string;
+  hideOnMobile: boolean;
+  Icon: React.ComponentType<{ className?: string }>;
+}[] = [
+  { mode: 'edit', title: 'エディタ', hideOnMobile: false, Icon: Edit3 },
+  { mode: 'split', title: '編集とプレビューを分割', hideOnMobile: true, Icon: Columns },
+  { mode: 'preview', title: 'プレビュー', hideOnMobile: false, Icon: Eye },
+];
+
+/** 書式ツールバー。'divider' は区切り線 */
+const FORMATTING_ACTIONS: (
+  | 'divider'
+  | {
+      prefix: string;
+      suffix?: string;
+      title: string;
+      Icon: React.ComponentType<{ className?: string }>;
+    }
+)[] = [
+  { prefix: '**', suffix: '**', title: '太字 (Bold)', Icon: Bold },
+  { prefix: '*', suffix: '*', title: '斜体 (Italic)', Icon: Italic },
+  'divider',
+  { prefix: '# ', title: '見出し 1', Icon: Heading1 },
+  { prefix: '## ', title: '見出し 2', Icon: Heading2 },
+  'divider',
+  { prefix: '- ', title: '箇条書きリスト', Icon: List },
+  { prefix: '- [ ] ', title: 'タスクチェックボックス', Icon: CheckSquare },
+  { prefix: '> ', title: '引用 (Quote)', Icon: Quote },
+  { prefix: '`', suffix: '`', title: 'インラインコード', Icon: Code },
+];
+
+/** 選択範囲が空のときに書式で囲むプレースホルダー */
+const FORMATTING_PLACEHOLDER = 'テキスト';
 
 interface NotePaneProps {
   paneIndex: number;
-  paneId: string;
   note: Note | null;
   allNotes: Note[];
   sections: Section[];
@@ -44,7 +82,6 @@ interface NotePaneProps {
 
 export const NotePane: React.FC<NotePaneProps> = ({
   paneIndex,
-  paneId,
   note,
   allNotes,
   sections,
@@ -57,8 +94,8 @@ export const NotePane: React.FC<NotePaneProps> = ({
   onMoveNote,
   onStructureNote,
 }) => {
-  const [viewMode, setViewMode] = useState<'edit' | 'preview' | 'split'>('edit');
-  const [copied, setCopied] = useState(false);
+  const [viewMode, setViewMode] = useState<ViewMode>('edit');
+  const { copied, copy } = useCopyFeedback();
   const [isNoteDropdownOpen, setIsNoteDropdownOpen] = useState(false);
   const [isSectionDropdownOpen, setIsSectionDropdownOpen] = useState(false);
 
@@ -74,24 +111,23 @@ export const NotePane: React.FC<NotePaneProps> = ({
     setLocalContent(note?.content || '');
   }, [note?.id]);
 
-  // Handle title change with debounce
-  const handleTitleChange = (val: string) => {
-    setLocalTitle(val);
+  // タイトル・本文の変更はデバウンスして保存（タイマーは共有）
+  const scheduleSave = (updates: Partial<Note>) => {
     if (!note) return;
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     saveTimeoutRef.current = setTimeout(() => {
-      onUpdateNote(note.id, { title: val });
-    }, 300);
+      onUpdateNote(note.id, updates);
+    }, TIMING.NOTE_AUTOSAVE_DEBOUNCE_MS);
   };
 
-  // Handle content change with debounce
+  const handleTitleChange = (val: string) => {
+    setLocalTitle(val);
+    scheduleSave({ title: val });
+  };
+
   const handleContentChange = (val: string) => {
     setLocalContent(val);
-    if (!note) return;
-    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => {
-      onUpdateNote(note.id, { content: val });
-    }, 300);
+    scheduleSave({ content: val });
   };
 
   // Cleanup timeout
@@ -103,10 +139,7 @@ export const NotePane: React.FC<NotePaneProps> = ({
 
   const handleCopy = () => {
     if (!note) return;
-    const text = `${localTitle ? `# ${localTitle}\n\n` : ''}${localContent}`;
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copy(`${localTitle ? `# ${localTitle}\n\n` : ''}${localContent}`);
   };
 
   // Insert markdown helper at cursor
@@ -119,7 +152,7 @@ export const NotePane: React.FC<NotePaneProps> = ({
     const current = localContent;
     const selected = current.substring(start, end);
 
-    const replacement = prefix + (selected || 'テキスト') + suffix;
+    const replacement = prefix + (selected || FORMATTING_PLACEHOLDER) + suffix;
     const newContent = current.substring(0, start) + replacement + current.substring(end);
 
     handleContentChange(newContent);
@@ -127,7 +160,7 @@ export const NotePane: React.FC<NotePaneProps> = ({
     setTimeout(() => {
       textarea.focus();
       textarea.setSelectionRange(start + prefix.length, start + replacement.length - suffix.length);
-    }, 10);
+    }, TIMING.EDITOR_REFOCUS_DELAY_MS);
   };
 
   const currentSection = sections.find((s) => s.id === note?.sectionId);
@@ -192,7 +225,7 @@ export const NotePane: React.FC<NotePaneProps> = ({
                         className="w-full text-left px-3 py-2 text-xs text-zinc-800 dark:text-zinc-200 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 truncate flex items-center gap-2"
                       >
                         <FileText className="w-3 h-3 text-zinc-400 shrink-0" />
-                        <span className="truncate">{n.title || n.content.slice(0, 20) || '無題'}</span>
+                        <span className="truncate">{getNoteShortLabel(n)}</span>
                       </button>
                     ))}
                   </div>
@@ -210,14 +243,7 @@ export const NotePane: React.FC<NotePaneProps> = ({
           <div className="grid grid-cols-2 gap-2 text-xs">
             <button
               type="button"
-              onClick={() => {
-                const targetSec = sections.find((s) => s.name.includes('Features')) || sections[0];
-                onUpdateNote(
-                  targetSec ? targetSec.id : '',
-                  {}
-                );
-                onCreateNoteInPane();
-              }}
+              onClick={onCreateNoteInPane}
               className="p-2 rounded-lg bg-white dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 hover:border-indigo-400 text-left text-zinc-700 dark:text-zinc-300 transition-colors"
             >
               <span className="font-semibold block text-indigo-600 dark:text-indigo-400 mb-0.5">💡 機能アイデア</span>
@@ -237,6 +263,8 @@ export const NotePane: React.FC<NotePaneProps> = ({
     );
   }
 
+  const isEditorVisible = viewMode === 'edit' || viewMode === 'split';
+  const isPreviewVisible = viewMode === 'preview' || viewMode === 'split';
   const charCount = localContent.length;
   const wordCount = localContent.trim() ? localContent.trim().split(/\s+/).length : 0;
 
@@ -265,7 +293,7 @@ export const NotePane: React.FC<NotePaneProps> = ({
               title="このペインで開くメモを切り替え"
             >
               <span className="truncate">
-                {localTitle || localContent.split('\n')[0].replace(/^#+\s*/, '') || '無題のメモ'}
+                {localTitle || getFirstLineText(localContent) || UNTITLED_NOTE_LABEL}
               </span>
               <ChevronDown className="w-3 h-3 text-zinc-400 shrink-0" />
             </button>
@@ -295,7 +323,7 @@ export const NotePane: React.FC<NotePaneProps> = ({
                       }`}
                     >
                       <FileText className="w-3 h-3 text-zinc-400 shrink-0" />
-                      <span className="truncate">{n.title || n.content.slice(0, 20) || '無題'}</span>
+                      <span className="truncate">{getNoteShortLabel(n)}</span>
                     </button>
                   ))}
                   <div className="border-t border-zinc-100 dark:border-zinc-800 mt-1 pt-1">
@@ -364,42 +392,21 @@ export const NotePane: React.FC<NotePaneProps> = ({
         <div className="flex items-center gap-1 shrink-0">
           {/* Edit / Split / Preview */}
           <div className="flex items-center p-0.5 rounded bg-zinc-200/60 dark:bg-zinc-800">
-            <button
-              type="button"
-              onClick={() => setViewMode('edit')}
-              className={`p-1 rounded text-[10px] font-medium transition-colors ${
-                viewMode === 'edit'
-                  ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                  : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
-              }`}
-              title="エディタ"
-            >
-              <Edit3 className="w-3 h-3" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('split')}
-              className={`hidden md:block p-1 rounded text-[10px] font-medium transition-colors ${
-                viewMode === 'split'
-                  ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                  : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
-              }`}
-              title="編集とプレビューを分割"
-            >
-              <Columns className="w-3 h-3" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode('preview')}
-              className={`p-1 rounded text-[10px] font-medium transition-colors ${
-                viewMode === 'preview'
-                  ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                  : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
-              }`}
-              title="プレビュー"
-            >
-              <Eye className="w-3 h-3" />
-            </button>
+            {VIEW_MODE_OPTIONS.map(({ mode, title, hideOnMobile, Icon }) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setViewMode(mode)}
+                className={`${hideOnMobile ? 'hidden md:block ' : ''}p-1 rounded text-[10px] font-medium transition-colors ${
+                  viewMode === mode
+                    ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                    : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
+                }`}
+                title={title}
+              >
+                <Icon className="w-3 h-3" />
+              </button>
+            ))}
           </div>
 
           {/* Quick Structure Rough Note */}
@@ -452,81 +459,30 @@ export const NotePane: React.FC<NotePaneProps> = ({
       </div>
 
       {/* Formatting Toolbar (shown when in edit or split mode) */}
-      {(viewMode === 'edit' || viewMode === 'split') && (
+      {isEditorVisible && (
         <div className="px-3 py-1 border-b border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-900/40 flex items-center gap-1 text-zinc-500 overflow-x-auto">
-          <button
-            type="button"
-            onClick={() => insertFormatting('**', '**')}
-            className="p-1 hover:text-zinc-900 dark:hover:text-zinc-100 rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-800"
-            title="太字 (Bold)"
-          >
-            <Bold className="w-3 h-3" />
-          </button>
-          <button
-            type="button"
-            onClick={() => insertFormatting('*', '*')}
-            className="p-1 hover:text-zinc-900 dark:hover:text-zinc-100 rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-800"
-            title="斜体 (Italic)"
-          >
-            <Italic className="w-3 h-3" />
-          </button>
-          <div className="w-px h-3 bg-zinc-200 dark:bg-zinc-700 mx-0.5" />
-          <button
-            type="button"
-            onClick={() => insertFormatting('# ')}
-            className="p-1 hover:text-zinc-900 dark:hover:text-zinc-100 rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-800"
-            title="見出し 1"
-          >
-            <Heading1 className="w-3 h-3" />
-          </button>
-          <button
-            type="button"
-            onClick={() => insertFormatting('## ')}
-            className="p-1 hover:text-zinc-900 dark:hover:text-zinc-100 rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-800"
-            title="見出し 2"
-          >
-            <Heading2 className="w-3 h-3" />
-          </button>
-          <div className="w-px h-3 bg-zinc-200 dark:bg-zinc-700 mx-0.5" />
-          <button
-            type="button"
-            onClick={() => insertFormatting('- ')}
-            className="p-1 hover:text-zinc-900 dark:hover:text-zinc-100 rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-800"
-            title="箇条書きリスト"
-          >
-            <List className="w-3 h-3" />
-          </button>
-          <button
-            type="button"
-            onClick={() => insertFormatting('- [ ] ')}
-            className="p-1 hover:text-zinc-900 dark:hover:text-zinc-100 rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-800"
-            title="タスクチェックボックス"
-          >
-            <CheckSquare className="w-3 h-3" />
-          </button>
-          <button
-            type="button"
-            onClick={() => insertFormatting('> ')}
-            className="p-1 hover:text-zinc-900 dark:hover:text-zinc-100 rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-800"
-            title="引用 (Quote)"
-          >
-            <Quote className="w-3 h-3" />
-          </button>
-          <button
-            type="button"
-            onClick={() => insertFormatting('`', '`')}
-            className="p-1 hover:text-zinc-900 dark:hover:text-zinc-100 rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-800"
-            title="インラインコード"
-          >
-            <Code className="w-3 h-3" />
-          </button>
+          {FORMATTING_ACTIONS.map((action, index) =>
+            action === 'divider' ? (
+              <div key={`divider-${index}`} className="w-px h-3 bg-zinc-200 dark:bg-zinc-700 mx-0.5" />
+            ) : (
+              <button
+                key={action.title}
+                type="button"
+                onClick={() => insertFormatting(action.prefix, action.suffix)}
+                className="p-1 hover:text-zinc-900 dark:hover:text-zinc-100 rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-800"
+                title={action.title}
+              >
+                <action.Icon className="w-3 h-3" />
+              </button>
+            )
+          )}
         </div>
       )}
 
       {/* Editor & Preview Area */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
         {/* Editor Area */}
-        {(viewMode === 'edit' || viewMode === 'split') && (
+        {isEditorVisible && (
           <div className="flex-1 flex flex-col min-w-0 h-full p-3 overflow-hidden">
             <textarea
               ref={textareaRef}
@@ -544,7 +500,7 @@ export const NotePane: React.FC<NotePaneProps> = ({
         )}
 
         {/* Preview Area */}
-        {(viewMode === 'preview' || viewMode === 'split') && (
+        {isPreviewVisible && (
           <div className="flex-1 min-w-0 h-full p-4 overflow-y-auto bg-zinc-50/30 dark:bg-zinc-950/20">
             <MarkdownRenderer content={localContent} />
           </div>
@@ -553,7 +509,7 @@ export const NotePane: React.FC<NotePaneProps> = ({
 
       {/* Pane Bottom Status Bar */}
       <div className="h-6 border-t border-zinc-100 dark:border-zinc-800/80 bg-zinc-50/50 dark:bg-zinc-900/50 px-3 flex items-center justify-between text-[10px] text-zinc-400 shrink-0">
-        <span>{new Date(note.updatedAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })} 更新</span>
+        <span>{new Date(note.updatedAt).toLocaleTimeString(DATE_LOCALE, { hour: '2-digit', minute: '2-digit' })} 更新</span>
         <div className="flex items-center gap-2">
           <span>{charCount} 文字</span>
           <span>•</span>
