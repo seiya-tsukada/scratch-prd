@@ -94,7 +94,8 @@ backend/
     models/              pydantic スキーマ
     routers/             auth, workspace, ai, events, account, cron
     services/            gemini, prompts, fallbacks, rate_limit, mailer, turnstile, samples
-                         （Phase 2 時点: main.py, config.py, models/ai.py, routers/ai.py, services/{gemini,prompts,fallbacks}.py）
+                         （Phase 3 時点: main.py, config.py, db.py, security.py, sessions.py, models/{ai,auth}.py,
+                          routers/{ai,auth}.py, services/{gemini,prompts,fallbacks,turnstile,rate_limit,samples,ai_usage}.py）
   scripts/               db_reset.py（ローカル DB の作り直し）
   tests/                 AI API・プロンプト・フォールバックのテスト、db/（スキーマ・権限・関数のテスト）
 api/                     Vercel の Python エントリポイント（Phase 6 で確定）
@@ -114,10 +115,11 @@ pyproject.toml           Python 依存（uv で管理）
 ```bash
 npm install
 uv sync                                     # Python 依存
-cp .env.example .env                        # GEMINI_API_KEY（未設定なら内蔵ジェネレータで応答）
-npm run dev:api                             # FastAPI（http://localhost:8000）
-npm run dev:web                             # Vite（http://localhost:3000。/api を :8000 へ proxy）
-npm run dev                                 # 旧構成: Express + Vite（Phase 4b で削除予定）
+cp .env.example .env                        # ローカル用の値入り。GEMINI_API_KEY は任意（未設定なら内蔵ジェネレータ）
+docker compose up -d && uv run python -m backend.scripts.db_reset
+npm run dev                                 # FastAPI（:8000）と Vite（:3000、/api を :8000 へ proxy）を同時起動
+npm run dev:api / npm run dev:web           # 個別に起動する場合
+npm run dev:legacy                          # 旧構成: Express（Phase 3 以降のフロントとは非互換。4b で削除）
 npm run lint                                # tsc --noEmit
 npm test                                    # vitest
 ```
@@ -135,11 +137,20 @@ uv run ruff check backend && uv run ruff format --check backend && uv run mypy
 - ローカルの `idea_ws_app` のパスワードは `idea_ws_app`（`db_reset` が設定する。本番では手作業で設定）。
 - テーブルを追加するときは、同じマイグレーションで RLS 有効化・`idea_ws_app` への GRANT・`idea_ws_app` 用ポリシーを行う。
 
+認証・セッション（Phase 3〜）:
+
+- 初回アクセスで `GuestGate` が `/api/auth/me` を確認し、無ければ Turnstile → `POST /api/auth/guest`。ローカルは Cloudflare 公式のテストキー（常に成功）を使う。
+- Cookie は `iws_session`（ローカル）/ `__Host-iws_session`（`COOKIE_SECURE=true`）。トークンは DB に HMAC でのみ保存。
+- 状態を変える API は `security.verify_origin`（`ALLOWED_ORIGINS`）を通す。ログインが必要な API は `sessions.CurrentUser` を受け取る。
+- Gemini など外部 API を待つエンドポイントでは `Db` ではなく `Pool` を受け取り、DB 接続は使う間だけ借りる（プール枯渇を防ぐ）。
+- API テストは `backend/tests/conftest.py` の `client` / `guest_client` を使う（Turnstile はモック、終了時にデータを削除）。
+
 AI（Phase 2〜）:
 
 - AI エンドポイント（`/api/structure-rough-note`, `/api/generate-prd`, `/api/health`）は FastAPI と Express の両方にある（4b まで）。`src/config/api.ts` の型を変えたら両方を直す。
 - AI の入力上限は `backend/app/config.py` と `src/config/api.ts` の `AI_INPUT_LIMITS` に同じ値を書く（`backend/tests/test_limits_sync.py` が検証）。
 - AI が使えないときは内蔵ジェネレータで応答し、`usedFallback: true` と `fallbackReason` を返す。フロントは `FallbackNotice` で必ず明示する。
+- Gemini を呼ぶときだけ日次クォータ（`config.AI_DAILY_QUOTAS`）を消費し、超過は 429（`quota_exceeded`）。すべての生成を `ai_generations` に記録する。
 
 ---
 

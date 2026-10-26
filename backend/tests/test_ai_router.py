@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from typing import Any
 
 import pytest
@@ -32,10 +31,9 @@ class FakeGemini:
 
 
 @pytest.fixture
-def client() -> Iterator[TestClient]:
-    with TestClient(app) as c:
-        yield c
-    app.dependency_overrides.clear()
+def client(guest_client: TestClient) -> TestClient:
+    """この試験ではゲストとしてログイン済みのクライアントを使う"""
+    return guest_client
 
 
 def use_gemini(gemini: FakeGemini | None) -> None:
