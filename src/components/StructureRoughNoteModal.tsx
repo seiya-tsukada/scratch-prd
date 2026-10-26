@@ -6,6 +6,8 @@ import { getNoteShortLabel } from '../utils/note';
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import { structureRoughNote } from '../services/apiClient';
 import { TIMING, UNTITLED_NOTE_LABEL } from '../config/app';
+import { AI_INPUT_LIMITS, FallbackReason } from '../config/api';
+import { FallbackNotice } from './FallbackNotice';
 
 /** 「新しいメモとして保存」時の保存先として優先するセクション名のキーワード */
 const STRUCTURED_NOTE_SECTION_KEYWORDS = ['Features', 'PRD'];
@@ -39,13 +41,16 @@ export const StructureRoughNoteModal: React.FC<StructureRoughNoteModalProps> = (
   const [structuredContent, setStructuredContent] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fallbackReason, setFallbackReason] = useState<FallbackReason | null>(null);
   const { copied, copy } = useCopyFeedback();
   const [applied, setApplied] = useState(false);
+  const isOverLimit = rawContent.length > AI_INPUT_LIMITS.MAX_ROUGH_NOTE_CHARS;
 
   const resetResult = () => {
     setStructuredTitle('');
     setStructuredContent('');
     setError(null);
+    setFallbackReason(null);
     setApplied(false);
   };
 
@@ -79,19 +84,26 @@ export const StructureRoughNoteModal: React.FC<StructureRoughNoteModalProps> = (
       setError('メモの本文が空です。殴り書きの内容を入力してください。');
       return;
     }
+    if (isOverLimit) {
+      setError(`本文が長すぎます。${AI_INPUT_LIMITS.MAX_ROUGH_NOTE_CHARS.toLocaleString()}文字以内にしてください。`);
+      return;
+    }
 
     setIsLoading(true);
     setError(null);
+    setFallbackReason(null);
     setApplied(false);
 
     try {
       const data = await structureRoughNote({
-        title: rawTitle,
+        // タイトル・プロジェクト名は文脈として渡すだけなので、上限を超える分は切り詰める
+        title: rawTitle.slice(0, AI_INPUT_LIMITS.MAX_TITLE_CHARS),
         content: rawContent,
-        projectName,
+        projectName: projectName.slice(0, AI_INPUT_LIMITS.MAX_TITLE_CHARS),
       });
       setStructuredTitle(data.structuredTitle || rawTitle || DEFAULT_STRUCTURED_TITLE);
       setStructuredContent(data.structuredContent || '');
+      setFallbackReason(data.usedFallback ? data.fallbackReason ?? 'ai_error' : null);
     } catch (err: any) {
       console.error(err);
       setError(err.message || '構造化中にエラーが発生しました。');
@@ -176,7 +188,7 @@ export const StructureRoughNoteModal: React.FC<StructureRoughNoteModalProps> = (
           <button
             type="button"
             onClick={handleStructure}
-            disabled={isLoading || !rawContent.trim()}
+            disabled={isLoading || !rawContent.trim() || isOverLimit}
             className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 shadow-xs cursor-pointer active:scale-95 transition-all"
           >
             {isLoading ? (
@@ -200,6 +212,8 @@ export const StructureRoughNoteModal: React.FC<StructureRoughNoteModalProps> = (
           </div>
         )}
 
+        {fallbackReason && structuredContent && <FallbackNotice reason={fallbackReason} />}
+
         {/* Content Body: Split View (Before vs After) */}
         <div className="flex-1 min-h-0 flex flex-col md:flex-row overflow-hidden bg-zinc-50/40 dark:bg-zinc-950/20">
           {/* Left: Raw Scribbles (Editable) */}
@@ -208,7 +222,9 @@ export const StructureRoughNoteModal: React.FC<StructureRoughNoteModalProps> = (
               <span className="text-xs font-bold text-zinc-600 dark:text-zinc-400 uppercase tracking-wide">
                 📝 元の殴り書きメモ
               </span>
-              <span className="text-[11px] text-zinc-400">{rawContent.length}文字</span>
+              <span className={`text-[11px] ${isOverLimit ? 'text-rose-600 font-semibold' : 'text-zinc-400'}`}>
+                {rawContent.length.toLocaleString()} / {AI_INPUT_LIMITS.MAX_ROUGH_NOTE_CHARS.toLocaleString()}文字
+              </span>
             </div>
             <textarea
               value={rawContent}

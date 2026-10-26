@@ -1,6 +1,7 @@
 /**
  * クライアントとサーバーで共有する API 定義。
  * サーバー側 (server.ts) からも import されるため、ブラウザ専用 API に依存しないこと。
+ * Python 側（backend/app/models/ai.py）とキー名・型を一致させること。
  */
 import type {
   PrdContradiction,
@@ -10,6 +11,31 @@ import type {
   PrdOpenQuestion,
   PrdProposal,
 } from '../types';
+
+/** AI への入力上限。backend/app/config.py と同じ値にすること（backend/tests/test_limits_sync.py で検証） */
+export const AI_INPUT_LIMITS = {
+  MAX_NOTES: 50,
+  MAX_NOTE_CONTENT_CHARS: 20_000,
+  MAX_TOTAL_NOTE_CHARS: 100_000,
+  MAX_ROUGH_NOTE_CHARS: 20_000,
+  MAX_TITLE_CHARS: 200,
+  MAX_EXISTING_PRD_CHARS: 50_000,
+} as const;
+
+/** AI ではなく内蔵ジェネレータで応答した理由 */
+export type FallbackReason = 'no_api_key' | 'ai_error' | 'invalid_response';
+
+export const FALLBACK_REASON_MESSAGES: Record<FallbackReason, string> = {
+  no_api_key: 'AI（Gemini）が未設定のため、内蔵ジェネレータで作成しました。',
+  ai_error: 'AIサービスとの通信に失敗したため、内蔵ジェネレータで作成しました。',
+  invalid_response: 'AIの応答を解釈できなかったため、内蔵ジェネレータで作成しました。',
+};
+
+/** 内蔵ジェネレータで応答した場合は usedFallback が true になる */
+export interface AiResultMeta {
+  usedFallback: boolean;
+  fallbackReason?: FallbackReason;
+}
 
 export const API_ENDPOINTS = {
   GENERATE_PRD: '/api/generate-prd',
@@ -32,14 +58,13 @@ export interface GeneratePrdRequest {
   existingPrd?: string;
 }
 
-export interface GeneratePrdResponse {
+export interface GeneratePrdResponse extends AiResultMeta {
   markdown: string;
   facts: PrdFact[];
   proposals: PrdProposal[];
   openQuestions: PrdOpenQuestion[];
   contradictions: PrdContradiction[];
   sourceNoteIds: string[];
-  _fallbackNotice?: string;
 }
 
 export interface StructureRoughNoteRequest {
@@ -48,7 +73,7 @@ export interface StructureRoughNoteRequest {
   projectName?: string;
 }
 
-export interface StructureRoughNoteResponse {
+export interface StructureRoughNoteResponse extends AiResultMeta {
   structuredTitle: string;
   structuredContent: string;
 }

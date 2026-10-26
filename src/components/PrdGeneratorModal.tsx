@@ -18,6 +18,7 @@ import {
   PRD_MODE_ORDER,
 } from '../config/prd';
 import { getNoteDisplayTitle } from '../utils/note';
+import { getPrdInputLimitError } from '../utils/aiLimits';
 
 const MODE_ICONS: Record<PrdGenerationMode, React.ComponentType<{ className?: string }>> = {
   strict: ShieldCheck,
@@ -95,9 +96,18 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
   const selectAll = () => setSelectedNoteIds(notes.map((n) => n.id));
   const deselectAll = () => setSelectedNoteIds([]);
 
+  const selectedNotes = notes.filter((n) => selectedNoteIds.includes(n.id));
+  const selectedNotesCount = selectedNotes.length;
+  const totalCharacters = selectedNotes.reduce((sum, n) => sum + n.content.length, 0);
+  const limitError = getPrdInputLimitError(selectedNotes);
+
   const handleStartGeneration = async () => {
     if (selectedNoteIds.length === 0) {
       setError('PRDを生成するには少なくとも1つのメモを選択してください。');
+      return;
+    }
+    if (limitError) {
+      setError(limitError);
       return;
     }
 
@@ -127,11 +137,6 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
       setIsGenerating(false);
     }
   };
-
-  const selectedNotesCount = selectedNoteIds.length;
-  const totalCharacters = notes
-    .filter((n) => selectedNoteIds.includes(n.id))
-    .reduce((sum, n) => sum + n.content.length, 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-900/60 backdrop-blur-xs">
@@ -200,6 +205,13 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
                 </button>
               </div>
             </div>
+
+            {limitError && (
+              <div className="mb-2 p-2 rounded-lg bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-900 text-[11px] text-amber-800 dark:text-amber-300 flex items-center gap-2">
+                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                <span>{limitError} 選択するメモを減らしてください。</span>
+              </div>
+            )}
 
             <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 max-h-44 overflow-y-auto space-y-3 bg-zinc-50/40 dark:bg-zinc-950/20">
               {sections.map((sec) => {
@@ -371,7 +383,7 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
             <button
               type="button"
               onClick={handleStartGeneration}
-              disabled={isGenerating || selectedNotesCount === 0}
+              disabled={isGenerating || selectedNotesCount === 0 || limitError !== null}
               className="flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 shadow-md shadow-indigo-500/20 active:scale-[0.98] transition-all cursor-pointer"
             >
               {isGenerating ? (

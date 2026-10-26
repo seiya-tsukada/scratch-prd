@@ -94,8 +94,9 @@ backend/
     models/              pydantic スキーマ
     routers/             auth, workspace, ai, events, account, cron
     services/            gemini, prompts, fallbacks, rate_limit, mailer, turnstile, samples
+                         （Phase 2 時点: main.py, config.py, models/ai.py, routers/ai.py, services/{gemini,prompts,fallbacks}.py）
   scripts/               db_reset.py（ローカル DB の作り直し）
-  tests/                 db/（スキーマ・権限・関数のテスト）
+  tests/                 AI API・プロンプト・フォールバックのテスト、db/（スキーマ・権限・関数のテスト）
 api/                     Vercel の Python エントリポイント（Phase 6 で確定）
 supabase/migrations/     SQL マイグレーション（Supabase CLI 形式）
 supabase/seed.sql        section_templates / sample_contents
@@ -112,16 +113,18 @@ pyproject.toml           Python 依存（uv で管理）
 
 ```bash
 npm install
-cp .env.example .env
-npm run dev          # 現状: Express + Vite（http://localhost:3000）
-npm run lint         # tsc --noEmit
-npm test             # vitest
+uv sync                                     # Python 依存
+cp .env.example .env                        # GEMINI_API_KEY（未設定なら内蔵ジェネレータで応答）
+npm run dev:api                             # FastAPI（http://localhost:8000）
+npm run dev:web                             # Vite（http://localhost:3000。/api を :8000 へ proxy）
+npm run dev                                 # 旧構成: Express + Vite（Phase 4b で削除予定）
+npm run lint                                # tsc --noEmit
+npm test                                    # vitest
 ```
 
 DB（Phase 1〜）:
 
 ```bash
-uv sync                                     # Python 依存
 docker compose up -d                        # db（開発用 :54322）と db-test（pytest 用 :54323, tmpfs）
 uv run python -m backend.scripts.db_reset   # 開発用 DB の idea_ws を作り直す（マイグレーション + seed）
 uv run pytest                               # db-test を作り直してテスト
@@ -132,12 +135,11 @@ uv run ruff check backend && uv run ruff format --check backend && uv run mypy
 - ローカルの `idea_ws_app` のパスワードは `idea_ws_app`（`db_reset` が設定する。本番では手作業で設定）。
 - テーブルを追加するときは、同じマイグレーションで RLS 有効化・`idea_ws_app` への GRANT・`idea_ws_app` 用ポリシーを行う。
 
-Phase 2 以降で追加予定（確定したらここを更新する）:
+AI（Phase 2〜）:
 
-```bash
-uv run uvicorn backend.app.main:app --reload --port 8000
-npm run dev:web                           # Vite（/api を :8000 へ proxy）
-```
+- AI エンドポイント（`/api/structure-rough-note`, `/api/generate-prd`, `/api/health`）は FastAPI と Express の両方にある（4b まで）。`src/config/api.ts` の型を変えたら両方を直す。
+- AI の入力上限は `backend/app/config.py` と `src/config/api.ts` の `AI_INPUT_LIMITS` に同じ値を書く（`backend/tests/test_limits_sync.py` が検証）。
+- AI が使えないときは内蔵ジェネレータで応答し、`usedFallback: true` と `fallbackReason` を返す。フロントは `FallbackNotice` で必ず明示する。
 
 ---
 

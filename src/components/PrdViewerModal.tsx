@@ -29,6 +29,8 @@ import {
   PROPOSAL_IMPACT_LABELS,
   getPrdModeMeta,
 } from '../config/prd';
+import { FallbackReason } from '../config/api';
+import { FallbackNotice } from './FallbackNotice';
 
 type ViewerTab = 'preview' | 'inspector' | 'sources' | 'history';
 
@@ -41,6 +43,8 @@ const MODE_BADGE_ICONS: Record<PrdGenerationMode, React.ComponentType<{ classNam
 interface PrdViewerModalProps {
   prd: PrdDocument;
   notes: Note[];
+  /** 直前の生成が内蔵ジェネレータによるものなら、その理由（生成直後のみ表示する） */
+  fallbackReason?: FallbackReason;
   onClose: () => void;
   onUpdatePrd: (prdId: string, updates: Partial<PrdDocument>) => void;
   onDeletePrd: (prdId: string) => void;
@@ -51,6 +55,7 @@ interface PrdViewerModalProps {
 export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
   prd,
   notes,
+  fallbackReason,
   onClose,
   onUpdatePrd,
   onDeletePrd,
@@ -206,6 +211,8 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
             </button>
           </div>
         </div>
+
+        {fallbackReason && <FallbackNotice reason={fallbackReason} />}
 
         {/* Tab Navigation */}
         <div className="px-6 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 flex items-center justify-between shrink-0">
