@@ -2,6 +2,7 @@
  * Gemini API が使えない（キー未設定・通信エラー・応答不正）場合の内蔵ジェネレータ。
  */
 import type {
+  AiResultMeta,
   GeneratePrdRequest,
   GeneratePrdResponse,
   StructureRoughNoteRequest,
@@ -16,7 +17,10 @@ export const DEFAULT_ROUGH_NOTE_HEADING = '機能アイデア仕様';
 export const DEFAULT_STRUCTURED_TITLE = '構造化PRDメモ';
 const ERROR_FALLBACK_TITLE = '構造化メモ';
 export const FALLBACK_PRD_MARKDOWN = '# 生成されたPRD\n\n内容を生成しました。';
-export const AI_ERROR_FALLBACK_NOTICE = 'AIサービスの一時的な通信エラーのため、内蔵ジェネレータで構成しました。';
+
+/** usedFallback / fallbackReason は呼び出し側（server.ts）で付ける */
+type MockPrd = Omit<GeneratePrdResponse, keyof AiResultMeta>;
+type StructuredNote = Omit<StructureRoughNoteResponse, keyof AiResultMeta>;
 
 const MODE_BADGES: Record<PrdGenerationMode, string> = {
   strict: '【厳密モード (Strict)】メモ記載の事実のみで構成。推測・追加なし',
@@ -77,7 +81,7 @@ const firstLineOf = (content: string) => content.split('\n')[0].replace(/^#+\s*/
 const stripBullet = (line: string) => line.replace(/^[-*•]\s*/, '');
 
 /** キー未設定時・AIエラー時に返す構造化済み PRD */
-export function generateMockPrd(payload: GeneratePrdRequest): GeneratePrdResponse {
+export function generateMockPrd(payload: GeneratePrdRequest): MockPrd {
   const { projectName, mode, detailLevel, notes } = payload;
   const isStrict = mode === 'strict';
   const isExpand = mode === 'expand';
@@ -194,7 +198,7 @@ ${openQuestions.map((q) => `- ❓ **${q.question}**: ${q.context} (緊急度: ${
 }
 
 /** キー未設定時に、メモの行をそのまま PRD 形式の見出しへ割り振る */
-export function structureRoughNoteLocally({ title, content }: StructureRoughNoteRequest): StructureRoughNoteResponse {
+export function structureRoughNoteLocally({ title, content }: StructureRoughNoteRequest): StructuredNote {
   const lines = content.trim().split('\n').filter(Boolean);
   const heading = title?.trim() || lines[0]?.replace(/^#+\s*/, '') || DEFAULT_ROUGH_NOTE_HEADING;
   const structuredContent = `# ${heading}
@@ -219,7 +223,7 @@ ${lines.slice(0, 2).join(' ')}
 }
 
 /** AI 呼び出しが失敗したときに最低限の構造で返す */
-export function buildRoughNoteErrorFallback(body: Partial<StructureRoughNoteRequest>): StructureRoughNoteResponse {
+export function buildRoughNoteErrorFallback(body: Partial<StructureRoughNoteRequest>): StructuredNote {
   const fallbackTitle = body.title || ERROR_FALLBACK_TITLE;
   const fallbackContent = `# ${fallbackTitle}\n\n## 1. 概要\n${body.content}\n\n## 2. 主要要件\n- [ ] 要件の具体化\n- [ ] 実装スコープの確定`;
   return { structuredTitle: fallbackTitle, structuredContent: fallbackContent };

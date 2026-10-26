@@ -8,6 +8,7 @@ import { PrdViewerModal } from './components/PrdViewerModal';
 import { SupabaseGuideModal } from './components/SupabaseGuideModal';
 import { workspaceRepository } from './services/workspaceRepository';
 import { generatePrd } from './services/apiClient';
+import { AI_INPUT_LIMITS, FallbackReason } from './config/api';
 import {
   DEFAULT_ACTIVE_PANE_ID,
   DEFAULT_PANE_COUNT,
@@ -49,6 +50,8 @@ export default function App() {
   const [isStructureModalOpen, setIsStructureModalOpen] = useState(false);
   const [generatorTargetPrdId, setGeneratorTargetPrdId] = useState<string | null>(null);
   const [activePrdId, setActivePrdId] = useState<string | null>(null);
+  // 直前の PRD 生成が内蔵ジェネレータによるものだった場合に、ビューアで知らせる
+  const [prdFallback, setPrdFallback] = useState<{ prdId: string; reason: FallbackReason } | null>(null);
   const [isSupabaseGuideOpen, setIsSupabaseGuideOpen] = useState(false);
 
   const refreshNotes = (projectId: string) => {
@@ -265,17 +268,19 @@ export default function App() {
       ? prds.find((p) => p.id === params.targetPrdId)
       : undefined;
 
+    // 本文以外（タイトル・名前・既存PRD）は文脈として渡すだけなので、上限を超える分は切り詰める
+    const clipTitle = (text: string | undefined) => text?.slice(0, AI_INPUT_LIMITS.MAX_TITLE_CHARS);
     const data = await generatePrd({
-      projectName: currentProject.name,
+      projectName: clipTitle(currentProject.name) ?? '',
       mode: params.mode,
       detailLevel: params.detailLevel,
       notes: sourceNotes.map((n) => ({
         id: n.id,
-        title: n.title,
+        title: clipTitle(n.title) ?? '',
         content: n.content,
-        sectionName: sections.find((s) => s.id === n.sectionId)?.name,
+        sectionName: clipTitle(sections.find((s) => s.id === n.sectionId)?.name),
       })),
-      existingPrd: existingPrd?.content,
+      existingPrd: existingPrd?.content.slice(0, AI_INPUT_LIMITS.MAX_EXISTING_PRD_CHARS),
     });
 
     const title =
@@ -299,7 +304,13 @@ export default function App() {
     });
 
     refreshPrds(currentProject.id);
+    setPrdFallback(data.usedFallback ? { prdId: savedPrd.id, reason: data.fallbackReason ?? 'ai_error' } : null);
     setActivePrdId(savedPrd.id);
+  };
+
+  const closePrdViewer = () => {
+    setActivePrdId(null);
+    setPrdFallback(null);
   };
 
   const handleUpdatePrd = (prdId: string, updates: Partial<PrdDocument>) => {
@@ -450,7 +461,8 @@ export default function App() {
         <PrdViewerModal
           prd={activePrd}
           notes={notes}
-          onClose={() => setActivePrdId(null)}
+          fallbackReason={prdFallback?.prdId === activePrd.id ? prdFallback.reason : undefined}
+          onClose={closePrdViewer}
           onUpdatePrd={handleUpdatePrd}
           onDeletePrd={handleDeletePrd}
           onRegenerate={openPrdGenerator}

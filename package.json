@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "dev:web": "vite --port 3000",
+    "dev:api": "uv run uvicorn backend.app.main:app --reload --port 8000",
     "build": "vite build",
     "start": "tsx server.ts",
     "preview": "vite preview",
