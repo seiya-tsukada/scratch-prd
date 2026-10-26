@@ -28,7 +28,7 @@
 
 ### 新規ファイル
 - `supabase/migrations/<timestamp>_idea_ws_schema.sql`：スキーマ・拡張（`citext`, `pgcrypto`）・全テーブル・インデックス・`updated_at` トリガー
-- `supabase/migrations/<timestamp>_idea_ws_functions.sql`：`consume_quota(user_id, kind, limit)`、掃除関数（`cleanup_inactive_guests(days)`, `cleanup_expired_auth()`）
+- `supabase/migrations/<timestamp>_idea_ws_functions.sql`：`consume_quota(user_id, kind, limit)`、`consume_rate_limit(key, window_seconds, limit)`、掃除関数（`cleanup_inactive_guests(days)`, `cleanup_expired_auth()`）
 - `supabase/migrations/<timestamp>_idea_ws_privileges.sql`：RLS 有効化、`anon` / `authenticated` からの REVOKE、`ALTER DEFAULT PRIVILEGES` での将来テーブルへの REVOKE、アプリ用ロールの GRANT
 - `supabase/seed.sql`：`section_templates`、`sample_contents`（`seed.ts` の内容を jsonb 化。サンプル内の ID はキー名で持ち、複製時に uuid を振る）
 - `docker-compose.yml`：ローカル Postgres（Supabase の Postgres イメージを第一候補。`anon` / `authenticated` ロールが存在する環境で検証するため。要確認）
@@ -40,7 +40,7 @@
 - `prd_documents.source_note_ids` は uuid[] / jsonb（メモ削除後も参照履歴を残すため FK にしない）。
 - `prd_versions` は `(prd_document_id, version_number)` unique。
 - `workspace_preferences` は `(user_id, project_id)` unique。
-- **IP 単位のレート制限用テーブル**（例：`rate_limit_buckets(key, window_start, count)`）は「Phase 0 での決定事項」#2 の結論待ち。
+- **IP 単位のレート制限用テーブル** `rate_limit_buckets(key, window_start, count)` と、上限判定つきでアトミックに加算する関数（例：`idea_ws.consume_rate_limit(key, window_seconds, limit) returns boolean`）を作る。`key` は `<エンドポイント種別>:<IP の HMAC ハッシュ>` とし、生の IP は保存しない。古いウィンドウは掃除関数で削除する。
 
 ### 完了条件
 `docker compose up` した Postgres にマイグレーションと seed が通り、権限テストが pytest で通る。
@@ -71,6 +71,7 @@
 - `Depends(current_user)` を AI エンドポイントに適用。`consume_quota` で日次上限（ゲスト / 登録で別の定数）。超過は 429 + `{ code: 'quota_exceeded', limit, registeredLimit, canUpgradeByRegistering }`。
 - AI 呼び出しごとに `ai_generations` を記録（失敗・フォールバックも記録）。
 - ゲスト作成時に `sample_contents` の有効版を 1 トランザクションで複製。
+- `POST /api/auth/guest` に IP 単位のレート制限（`consume_rate_limit`）を適用。
 - フロント：起動時に `/api/auth/me` → 401 なら Turnstile → `/api/auth/guest`。（Turnstile は `VITE_TURNSTILE_SITE_KEY`。ローカルは Cloudflare のテスト用キー。要確認）
 - テスト：発行・検証・失効・期限切れ、Origin 不一致で 403、上限到達で 429、サンプル複製の件数と所有者。CI 用に Postgres を使う pytest fixture（テストごとにトランザクションをロールバック）。
 
@@ -167,7 +168,7 @@
 | # | 論点 | 決定 |
 |---|---|---|
 | 1 | アプリ用 DB ロールと RLS | 専用ロール `idea_ws_app` に `BYPASSRLS` を付与し、ポリシーは作らない。Supabase で付与できない場合は `TO idea_ws_app` 限定のポリシーに切り替える（Phase 1 で検証） |
-| 2 | IP 単位のレート制限テーブル | **未決**（Phase 1 着手前に決める） |
+| 2 | IP 単位のレート制限テーブル | Phase 1 で `rate_limit_buckets` と加算関数を追加。Phase 3 のゲスト作成、Phase 5 のメール送信・OAuth で使う |
 | 3 | サンプル由来データの判定（`from_sample`） | 不要。統合確認はゲストにデータがあれば常に出す |
 | 4 | Phase 4 の分割 | 4a（API）/ 4b（フロント移行・後片付け）の 2 PR に分ける |
 | 5 | ローカル DB | Docker Compose で Supabase の Postgres イメージを使う（CI も同構成） |
