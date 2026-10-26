@@ -167,12 +167,22 @@
 
 | # | 論点 | 決定 |
 |---|---|---|
-| 1 | アプリ用 DB ロールと RLS | 専用ロール `idea_ws_app` に `BYPASSRLS` を付与し、ポリシーは作らない。Supabase で付与できない場合は `TO idea_ws_app` 限定のポリシーに切り替える（Phase 1 で検証） |
+| 1 | アプリ用 DB ロールと RLS | 専用ロール `idea_ws_app`（BYPASSRLS なし）＋ 各テーブルに `TO idea_ws_app` 限定のポリシー。Supabase では自作ロールに BYPASSRLS を付けられないため（Phase 1 で変更）。anon / authenticated / service_role 向けポリシーは作らない |
 | 2 | IP 単位のレート制限テーブル | Phase 1 で `rate_limit_buckets` と加算関数を追加。Phase 3 のゲスト作成、Phase 5 のメール送信・OAuth で使う |
 | 3 | サンプル由来データの判定（`from_sample`） | 不要。統合確認はゲストにデータがあれば常に出す |
 | 4 | Phase 4 の分割 | 4a（API）/ 4b（フロント移行・後片付け）の 2 PR に分ける |
 | 5 | ローカル DB | Docker Compose で Supabase の Postgres イメージを使う（CI も同構成） |
 | 6 | AI クォータの消費 | Gemini 呼び出し直前に消費。キー未設定時のフォールバックは消費しない。AI エラー時も返却しない |
+
+### Phase 1 で追加した決定
+| # | 論点 | 決定 |
+|---|---|---|
+| 7 | events / ai_generations の外部キー | `on delete set null`（ゲスト掃除・アカウント削除後もファネルを集計するため）。properties に個人情報を入れない |
+| 8 | ゲストの掃除条件 | 有効なセッションが無く、30 日以上アクセスのないゲストをデータの有無に関係なく削除 |
+| 9 | 日次クォータの日付 | JST |
+| 10 | service_role | anon / authenticated と同じく idea_ws の権限を REVOKE |
+| 11 | 本番のマイグレーション適用 | Supabase CLI の `supabase db push --db-url`（直接接続、postgres ロール） |
+| 12 | idea_ws_app のパスワード | マイグレーションではログイン不可で作成。本番は手作業で設定（docs/supabase-setup.md） |
 
 ## PR・マージ計画
 

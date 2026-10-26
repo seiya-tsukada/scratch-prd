@@ -1,0 +1,30 @@
+# ローカル開発・テスト用の Postgres。Supabase と同じイメージ（anon / authenticated などのロールが存在する）
+#   db      … 開発用（データはボリュームに保持）
+#   db-test … pytest 用（毎回作り直すため tmpfs）
+x-supabase-postgres: &supabase-postgres
+  image: supabase/postgres:17.11.0.007
+  environment:
+    POSTGRES_PASSWORD: postgres
+  healthcheck:
+    test: ["CMD", "pg_isready", "-U", "postgres", "-h", "localhost"]
+    interval: 2s
+    timeout: 5s
+    retries: 30
+
+services:
+  db:
+    <<: *supabase-postgres
+    ports:
+      - "54322:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+
+  db-test:
+    <<: *supabase-postgres
+    ports:
+      - "54323:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+
+volumes:
+  db-data:

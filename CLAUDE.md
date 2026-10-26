@@ -61,7 +61,7 @@ Vercel（同一リポジトリ・同一ドメイン）
 - **Supabase のキー（anon / service_role / publishable / secret）や DB 接続文字列をフロントに渡さない。** `VITE_` 接頭辞の環境変数に秘密情報を入れない。
 - **`public` スキーマにテーブル・関数・ビューを作らない。** すべて `idea_ws` に作る。
 - **`idea_ws` を Supabase Data API（PostgREST）の Exposed schemas に追加しない。**
-- **RLS を無効化しない。** `idea_ws` の全テーブルで RLS を有効にし、`anon` / `authenticated` 向けのポリシーは作らない。
+- **RLS を無効化しない。** `idea_ws` の全テーブルで RLS を有効にし、ポリシーはアプリ用ロール `idea_ws_app` 向けだけを作る（`anon` / `authenticated` / `service_role` 向けは作らない）。
 - **ユーザー配下データのクエリで `user_id` 条件を省略しない。** 他人のリソース ID を指定されたら 404 を返す（403 で存在を漏らさない）。
 - セッショントークン・ログイントークンを平文で DB に保存しない（HMAC ハッシュのみ）。IP アドレスを生で保存しない。
 - JWT をセッションに使わない。`localStorage` に認証情報を置かない。
@@ -94,10 +94,12 @@ backend/
     models/              pydantic スキーマ
     routers/             auth, workspace, ai, events, account, cron
     services/            gemini, prompts, fallbacks, rate_limit, mailer, turnstile, samples
-  tests/
+  scripts/               db_reset.py（ローカル DB の作り直し）
+  tests/                 db/（スキーマ・権限・関数のテスト）
 api/                     Vercel の Python エントリポイント（Phase 6 で確定）
 supabase/migrations/     SQL マイグレーション（Supabase CLI 形式）
 supabase/seed.sql        section_templates / sample_contents
+docker-compose.yml       ローカル / テスト用 Postgres（Supabase の Postgres イメージ）
 docs/                    migration-plan.md, supabase-setup.md, deploy.md
 pyproject.toml           Python 依存（uv で管理）
 ```
@@ -106,7 +108,7 @@ pyproject.toml           Python 依存（uv で管理）
 
 ## ローカル開発
 
-前提: Node.js、[uv](https://docs.astral.sh/uv/)（Python 3.12 を uv で用意する。システムの Python は使わない）、Docker。
+前提: Node.js、[uv](https://docs.astral.sh/uv/)（Python 3.12 を uv で用意する。システムの Python は使わない）、Docker（colima 等）。
 
 ```bash
 npm install
@@ -116,14 +118,25 @@ npm run lint         # tsc --noEmit
 npm test             # vitest
 ```
 
+DB（Phase 1〜）:
+
+```bash
+uv sync                                     # Python 依存
+docker compose up -d                        # db（開発用 :54322）と db-test（pytest 用 :54323, tmpfs）
+uv run python -m backend.scripts.db_reset   # 開発用 DB の idea_ws を作り直す（マイグレーション + seed）
+uv run pytest                               # db-test を作り直してテスト
+uv run ruff check backend && uv run ruff format --check backend && uv run mypy
+```
+
+- マイグレーションは `supabase/migrations/`（Supabase CLI 形式）、コンテンツの初期データは `supabase/seed.sql`。本番への適用手順は [docs/supabase-setup.md](docs/supabase-setup.md)。
+- ローカルの `idea_ws_app` のパスワードは `idea_ws_app`（`db_reset` が設定する。本番では手作業で設定）。
+- テーブルを追加するときは、同じマイグレーションで RLS 有効化・`idea_ws_app` への GRANT・`idea_ws_app` 用ポリシーを行う。
+
 Phase 2 以降で追加予定（確定したらここを更新する）:
 
 ```bash
-uv sync                                   # Python 依存
 uv run uvicorn backend.app.main:app --reload --port 8000
 npm run dev:web                           # Vite（/api を :8000 へ proxy）
-uv run pytest
-docker compose up -d db                   # ローカル Postgres（Phase 1）
 ```
 
 ---
