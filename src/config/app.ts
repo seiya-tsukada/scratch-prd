@@ -41,3 +41,10 @@ export const createEmptyPanes = (): PaneInfo[] =>
 export const QUICK_CAPTURE_SHORTCUT_KEY = 'n';
 
 export const DATE_LOCALE = 'ja-JP';
+
+/** Cloudflare Turnstile（ゲスト作成時の bot 対策）。公開値なので VITE_ で渡す */
+export const TURNSTILE_SITE_KEY: string = import.meta.env.VITE_TURNSTILE_SITE_KEY ?? '';
+export const TURNSTILE_SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+
+/** セッションが切れた（API が 401 を返した）ことを知らせるウィンドウイベント */
+export const SESSION_EXPIRED_EVENT = 'idea-workspace:session-expired';

@@ -6,6 +6,8 @@ requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.162",
   "google-genai>=2.33",
+  "httpx>=0.28",
+  "psycopg-pool>=3.3",
   "psycopg[binary]>=3.2",
   "pydantic>=2.14",
   "pydantic-settings>=2.16",

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 from zoneinfo import ZoneInfo
 
+from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -20,15 +23,31 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.8-flash"
 
+    # バックエンドの DB 接続（本番は Supavisor の transaction pooler、ユーザーは idea_ws_app）
+    database_url: str = "postgresql://idea_ws_app:idea_ws_app@localhost:54322/postgres"
+    # セッショントークン・IP をハッシュ化する HMAC の鍵。必須
+    session_token_pepper: SecretStr
+    # 状態を変えるリクエストで許可する Origin（カンマ区切り）
+    allowed_origins: str = "http://localhost:3000"
+    turnstile_secret_key: SecretStr | None = None
+    # ローカル（http）では false にする。true なら Cookie 名に __Host- を付ける
+    cookie_secure: bool = True
+    # Vercel 上では true（x-forwarded-for を Vercel が上書きするため信頼できる）
+    trust_proxy_headers: bool = False
+
     @property
     def effective_gemini_api_key(self) -> str | None:
         key = self.gemini_api_key
         return key if key and key != GEMINI_API_KEY_PLACEHOLDER else None
 
+    @property
+    def allowed_origin_list(self) -> list[str]:
+        return [o.strip().rstrip("/") for o in self.allowed_origins.split(",") if o.strip()]
+
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    return Settings()  # type: ignore[call-arg]  # 必須項目は環境変数・.env から読む
 
 
 GEMINI_TEMPERATURE = 0.2
@@ -44,6 +63,29 @@ MAX_EXISTING_PRD_CHARS = 50_000
 
 # これを超える Content-Length のリクエストは 413
 MAX_REQUEST_BYTES = 1_000_000
+
+# セッション（アクセスのたびに延長する）。ゲストは Cookie を失うとデータに戻れないため長くする
+SESSION_TTL = {"guest": timedelta(days=180), "registered": timedelta(days=30)}
+# last_seen_at / 有効期限の更新間隔（毎リクエストで書き込まないため）
+SESSION_TOUCH_INTERVAL = timedelta(minutes=10)
+SESSION_COOKIE_NAME = "iws_session"
+SECURE_SESSION_COOKIE_NAME = "__Host-iws_session"
+
+# AI の日次利用上限（日付は JST）
+AiKind = Literal["structure", "prd"]
+AI_DAILY_QUOTAS: dict[str, dict[AiKind, int]] = {
+    "guest": {"structure": 20, "prd": 5},
+    "registered": {"structure": 100, "prd": 30},
+}
+
+# ゲスト作成の IP 単位レート制限
+GUEST_CREATE_RATE_LIMIT = 10
+GUEST_CREATE_RATE_WINDOW_SECONDS = 3600
+
+TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
+TURNSTILE_TIMEOUT_SECONDS = 10
+
+USER_AGENT_MAX_CHARS = 500
 
 # PRD 再生成時にプロンプトへ含める既存PRDの最大文字数
 EXISTING_PRD_CONTEXT_MAX_CHARS = 1000

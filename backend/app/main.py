@@ -2,15 +2,29 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 
 from backend.app import config
-from backend.app.routers import ai
+from backend.app.db import create_pool
+from backend.app.routers import ai, auth
 
-app = FastAPI(title="Idea Workspace API", docs_url=None, redoc_url=None, openapi_url=None)
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    pool = create_pool(config.get_settings().database_url)
+    await pool.open()
+    app.state.pool = pool
+    try:
+        yield
+    finally:
+        await pool.close()
+
+
+app = FastAPI(title="Idea Workspace API", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 @app.middleware("http")
@@ -21,4 +35,5 @@ async def limit_request_size(request: Request, call_next: Callable[[Request], Aw
     return await call_next(request)
 
 
+app.include_router(auth.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")

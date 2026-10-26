@@ -41,7 +41,42 @@ export const API_ENDPOINTS = {
   GENERATE_PRD: '/api/generate-prd',
   STRUCTURE_ROUGH_NOTE: '/api/structure-rough-note',
   HEALTH: '/api/health',
+  AUTH_GUEST: '/api/auth/guest',
+  AUTH_ME: '/api/auth/me',
+  AUTH_LOGOUT: '/api/auth/logout',
 } as const;
+
+/** ログイン中のユーザー（backend/app/models/auth.py の MeUser） */
+export interface SessionUser {
+  id: string;
+  isGuest: boolean;
+  email?: string;
+  displayName?: string;
+}
+
+export interface MeResponse {
+  user: SessionUser;
+}
+
+export interface GuestRequest {
+  turnstileToken: string;
+}
+
+/** API が返すエラー（detail.code）。入力検証エラー（422）は detail が配列 */
+export type ApiErrorCode =
+  | 'unauthenticated'
+  | 'invalid_origin'
+  | 'turnstile_failed'
+  | 'rate_limited'
+  | 'quota_exceeded';
+
+export interface QuotaExceededDetail {
+  code: 'quota_exceeded';
+  kind: 'structure' | 'prd';
+  limit: number;
+  registeredLimit: number;
+  canUpgradeByRegistering: boolean;
+}
 
 export interface PrdNoteInput {
   id: string;
