@@ -63,6 +63,29 @@ MAX_EXISTING_PRD_CHARS = 50_000
 
 # これを超える Content-Length のリクエストは 413
 MAX_REQUEST_BYTES = 1_000_000
+# 旧 localStorage データの取り込み（プロジェクト単位）だけは大きくする（Vercel の上限 4.5MB 未満）
+IMPORT_MAX_REQUEST_BYTES = 4_000_000
+IMPORT_PATH = "/api/import/local-project"
+
+# 保存できるデータの上限（ゲストによる DB の使いすぎを防ぐ。AI の入力上限とは別）
+MAX_PROJECTS_PER_USER = 100
+MAX_SECTIONS_PER_PROJECT = 50
+MAX_NOTES_PER_PROJECT = 2_000
+MAX_PRDS_PER_PROJECT = 200
+MAX_PRD_VERSIONS_PER_PRD = 200
+MAX_NAME_CHARS = 200
+MAX_DESCRIPTION_CHARS = 2_000
+MAX_STORED_NOTE_CHARS = 100_000
+MAX_STORED_PRD_CHARS = 200_000
+MAX_PRD_ITEMS = 500
+MAX_PRD_SOURCE_NOTES = 200
+
+# ワークスペースのペイン（src/config/app.ts と同じ）
+MAX_PANES = 4
+DEFAULT_PANE_COUNT = 2
+PANE_IDS = [f"pane-{i}" for i in range(MAX_PANES)]
+# ユーザーが追加したセクションのアイコン（src/config/seed.ts の CUSTOM_SECTION_ICON）
+CUSTOM_SECTION_ICON = "Folder"
 
 # セッション（アクセスのたびに延長する）。ゲストは Cookie を失うとデータに戻れないため長くする
 SESSION_TTL = {"guest": timedelta(days=180), "registered": timedelta(days=30)}

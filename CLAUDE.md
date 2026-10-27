@@ -96,6 +96,7 @@ backend/
     services/            gemini, prompts, fallbacks, rate_limit, mailer, turnstile, samples
                          （Phase 3 時点: main.py, config.py, db.py, security.py, sessions.py, models/{ai,auth}.py,
                           routers/{ai,auth}.py, services/{gemini,prompts,fallbacks,turnstile,rate_limit,samples,ai_usage}.py）
+                         （Phase 4a で追加: models/workspace.py, routers/workspace.py, services/{workspace_repo,legacy_import}.py）
   scripts/               db_reset.py（ローカル DB の作り直し）
   tests/                 AI API・プロンプト・フォールバックのテスト、db/（スキーマ・権限・関数のテスト）
 api/                     Vercel の Python エントリポイント（Phase 6 で確定）
@@ -144,6 +145,13 @@ uv run ruff check backend && uv run ruff format --check backend && uv run mypy
 - 状態を変える API は `security.verify_origin`（`ALLOWED_ORIGINS`）を通す。ログインが必要な API は `sessions.CurrentUser` を受け取る。
 - Gemini など外部 API を待つエンドポイントでは `Db` ではなく `Pool` を受け取り、DB 接続は使う間だけ借りる（プール枯渇を防ぐ）。
 - API テストは `backend/tests/conftest.py` の `client` / `guest_client` を使う（Turnstile はモック、終了時にデータを削除）。
+
+Workspace API（Phase 4a〜）:
+
+- `backend/app/services/workspace_repo.py` の関数は必ず `user_id` を受け取り、全クエリに `user_id` 条件を付ける。他人・存在しない ID は `NotFoundError`（→ 404）。
+- 新しいエンドポイントを足したら `backend/tests/test_workspace_isolation.py` の `ATTACKS` にも追加する（他人の ID で 404・データ不変を確認）。
+- メモの自動保存は `PATCH /api/notes/{id}` に `baseUpdatedAt` を付ける。古ければ 409 と最新のメモが返る。
+- 保存できるデータの上限は `config.MAX_*`（超過は 422 `limit_exceeded`）。旧 localStorage の取り込み（`/api/import/local-project`）だけ本文 4MB まで。
 
 AI（Phase 2〜）:
 

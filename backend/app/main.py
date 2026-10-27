@@ -7,10 +7,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from psycopg import errors as pg_errors
 
 from backend.app import config
 from backend.app.db import create_pool
-from backend.app.routers import ai, auth
+from backend.app.routers import ai, auth, workspace
+from backend.app.services.workspace_repo import ConflictError, LimitExceededError, NotFoundError
 
 
 @asynccontextmanager
@@ -30,10 +32,31 @@ app = FastAPI(title="Idea Workspace API", docs_url=None, redoc_url=None, openapi
 @app.middleware("http")
 async def limit_request_size(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
     content_length = request.headers.get("content-length")
-    if content_length and content_length.isdigit() and int(content_length) > config.MAX_REQUEST_BYTES:
+    limit = config.IMPORT_MAX_REQUEST_BYTES if request.url.path == config.IMPORT_PATH else config.MAX_REQUEST_BYTES
+    if content_length and content_length.isdigit() and int(content_length) > limit:
         return JSONResponse(status_code=413, content={"detail": "Request body too large"})
     return await call_next(request)
 
 
+# 他人のリソース・存在しないリソースは区別せず 404（存在を漏らさない）
+@app.exception_handler(NotFoundError)
+@app.exception_handler(pg_errors.ForeignKeyViolation)
+async def not_found(request: Request, exc: Exception) -> JSONResponse:
+    return JSONResponse(status_code=404, content={"detail": {"code": "not_found"}})
+
+
+@app.exception_handler(ConflictError)
+async def conflict(request: Request, exc: ConflictError) -> JSONResponse:
+    note = exc.current.model_dump(by_alias=True, mode="json")
+    return JSONResponse(status_code=409, content={"detail": {"code": "conflict", "note": note}})
+
+
+@app.exception_handler(LimitExceededError)
+async def limit_exceeded(request: Request, exc: LimitExceededError) -> JSONResponse:
+    detail = {"code": "limit_exceeded", "resource": exc.resource, "limit": exc.limit}
+    return JSONResponse(status_code=422, content={"detail": detail})
+
+
 app.include_router(auth.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
+app.include_router(workspace.router, prefix="/api")
