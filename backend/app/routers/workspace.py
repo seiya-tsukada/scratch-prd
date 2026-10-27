@@ -31,6 +31,7 @@ from backend.app.models.workspace import (
 )
 from backend.app.services import legacy_import
 from backend.app.services import workspace_repo as repo
+from backend.app.services.events import record_event
 from backend.app.sessions import CurrentUser
 
 router = APIRouter(dependencies=[Depends(security.verify_origin)])
@@ -100,7 +101,9 @@ async def delete_section(section_id: UUID, user: CurrentUser, db: Db) -> None:
 
 @router.post("/projects/{project_id}/notes", status_code=201)
 async def create_note(project_id: UUID, body: NoteCreate, user: CurrentUser, db: Db) -> Note:
-    return await repo.create_note(db, user.user_id, project_id, body)
+    note = await repo.create_note(db, user.user_id, project_id, body)
+    await record_event(db, user.user_id, "note_created", session_id=user.session_id)
+    return note
 
 
 @router.patch("/notes/{note_id}")
@@ -147,4 +150,6 @@ async def save_preferences(project_id: UUID, body: PreferencesSave, user: Curren
 @router.post(config.IMPORT_PATH.removeprefix("/api"), status_code=201)
 async def import_local_project(body: LegacyProjectImport, user: CurrentUser, db: Db) -> ImportResult:
     """旧 localStorage のデータを 1 プロジェクト分取り込む（ID は振り直す）"""
-    return await legacy_import.import_legacy_project(db, user.user_id, body)
+    result = await legacy_import.import_legacy_project(db, user.user_id, body)
+    await record_event(db, user.user_id, "local_data_imported", {"notes": result.notes}, session_id=user.session_id)
+    return result

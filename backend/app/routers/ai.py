@@ -25,6 +25,7 @@ from backend.app.models.ai import (
 )
 from backend.app.services import fallbacks
 from backend.app.services.ai_usage import AiGenerationRecord, record_ai_generation
+from backend.app.services.events import record_event
 from backend.app.services.gemini import GeminiClient, get_gemini_client
 from backend.app.services.prompts import build_generate_prd_prompt, build_structure_rough_note_prompt
 from backend.app.services.rate_limit import ai_quota_limit, consume_quota
@@ -49,6 +50,7 @@ class AiOutcome[T: BaseModel]:
 async def ensure_quota(db: Conn, user: SessionUser, kind: config.AiKind) -> None:
     limit = ai_quota_limit(user.account_type, kind)
     if not await consume_quota(db, user.user_id, kind, limit):
+        await record_event(db, user.user_id, "rate_limited", {"kind": kind}, session_id=user.session_id)
         raise HTTPException(
             status_code=429,
             detail={
@@ -130,6 +132,13 @@ async def structure_rough_note(
             model=gemini.model if gemini else None,
         ),
     )
+    await record_event(
+        pool,
+        user.user_id,
+        "rough_note_structured",
+        {"usedFallback": response.used_fallback},
+        session_id=user.session_id,
+    )
     return response
 
 
@@ -174,6 +183,18 @@ async def generate_prd(
             error_type=outcome.error_type,
             model=gemini.model if gemini else None,
         ),
+    )
+    await record_event(
+        pool,
+        user.user_id,
+        "prd_generated",
+        {
+            "mode": request.mode or "suggest",
+            "detailLevel": request.detail_level or "standard",
+            "noteCount": len(request.notes),
+            "usedFallback": response.used_fallback,
+        },
+        session_id=user.session_id,
     )
     return response
 

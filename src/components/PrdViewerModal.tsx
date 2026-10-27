@@ -31,6 +31,7 @@ import {
 } from '../config/prd';
 import { FallbackReason } from '../config/api';
 import { FallbackNotice } from './FallbackNotice';
+import { track } from '../services/analytics';
 
 type ViewerTab = 'preview' | 'inspector' | 'sources' | 'history';
 
@@ -80,7 +81,10 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
   const handleCopyMarkdown = () => copyMarkdown(editableContent);
 
   // AIコーディングツール (Cursor, Claude Code, Windsurf) 向けのプロンプト形式
-  const handleCopyAiPrompt = () => copyAiPrompt(AI_CODING_PROMPT_HEADER + editableContent);
+  const handleCopyAiPrompt = () => {
+    copyAiPrompt(AI_CODING_PROMPT_HEADER + editableContent);
+    track({ name: 'prd_copied_for_ai' });
+  };
 
   // Download .md file
   const handleDownloadMd = () => {
@@ -89,6 +93,7 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
     const link = document.createElement('a');
     link.href = url;
     link.download = `${prd.title.replace(/\s+/g, '_')}_v${prd.version || 1}.md`;
+    track({ name: 'prd_downloaded' });
     link.click();
     URL.revokeObjectURL(url);
   };

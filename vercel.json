@@ -1,0 +1,12 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "fastapi",
+  "buildCommand": "npm ci && npm run build && npm run check:bundle",
+  "functions": {
+    "backend/app/main.py": {
+      "maxDuration": 90,
+      "excludeFiles": "{node_modules/**,src/**,backend/tests/**,supabase/**,docs/**,scripts/**,.github/**}"
+    }
+  },
+  "crons": [{ "path": "/api/cron/cleanup", "schedule": "0 18 * * *" }]
+}
