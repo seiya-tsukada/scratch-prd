@@ -99,11 +99,13 @@ backend/
                          （Phase 4a で追加: models/workspace.py, routers/workspace.py, services/{workspace_repo,legacy_import}.py）
   scripts/               db_reset.py（ローカル DB の作り直し）
   tests/                 AI API・プロンプト・フォールバックのテスト、db/（スキーマ・権限・関数のテスト）
-api/                     Vercel の Python エントリポイント（Phase 6 で確定）
+vercel.json              Vercel の設定（framework: fastapi、ビルド、Cron）。エントリポイントは pyproject.toml の [tool.vercel]
+scripts/                 check-bundle-secrets.mjs（ビルド成果物の秘密情報検査）
+.github/workflows/       ci.yml（lint / テスト / ビルド / 秘密情報検査）
 supabase/migrations/     SQL マイグレーション（Supabase CLI 形式）
 supabase/seed.sql        section_templates / sample_contents
 docker-compose.yml       ローカル / テスト用 Postgres（Supabase の Postgres イメージ）
-docs/                    migration-plan.md, supabase-setup.md, deploy.md
+docs/                    migration-plan.md, supabase-setup.md, deploy.md（環境変数一覧とデプロイ手順）
 pyproject.toml           Python 依存（uv で管理）
 ```
 
@@ -157,6 +159,12 @@ Workspace API（Phase 4a〜）:
 - 新しいエンドポイントを足したら `backend/tests/test_workspace_isolation.py` の `ATTACKS` にも追加する（他人の ID で 404・データ不変を確認）。
 - メモの自動保存は `PATCH /api/notes/{id}` に `baseUpdatedAt` を付ける。古ければ 409 と最新のメモが返る。
 - 保存できるデータの上限は `config.MAX_*`（超過は 422 `limit_exceeded`）。旧 localStorage の取り込み（`/api/import/local-project`）だけ本文 4MB まで。
+
+計測・デプロイ（Phase 6〜）:
+
+- イベントは `backend/app/services/events.py` のホワイトリスト（`EVENT_SCHEMAS`）に追加してから使う。API で起きる出来事はサーバー側で `record_event`、画面上の操作だけ `src/services/analytics.ts` の `track`（`CLIENT_EVENTS`）。properties に個人情報・メモ本文を入れない。
+- 本番では FastAPI が `dist/` も配信する（`app.frontend`）。セキュリティヘッダー（CSP など）は `main.py`。外部のスクリプト・画像を足すときは CSP も直す。
+- 環境変数を足したら `docs/deploy.md` の表と `.env.example` を更新する。サーバー側の秘密は `scripts/check-bundle-secrets.mjs` の `SERVER_ONLY_ENV` にも足す。
 
 AI（Phase 2〜）:
 

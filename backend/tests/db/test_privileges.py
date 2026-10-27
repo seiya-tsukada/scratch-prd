@@ -11,6 +11,8 @@ from .helpers import create_user
 SUPABASE_API_ROLES = ["anon", "authenticated", "service_role"]
 TABLE_PRIVILEGES = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"]
 CONTENT_TABLES = {"section_templates", "sample_contents"}
+# 集計ビュー（postgres ロールで見る。アプリのロールにも権限を付けない）
+ANALYTICS_VIEWS = {"funnel_daily", "ai_fallback_daily"}
 
 
 def idea_ws_tables(conn: psycopg.Connection) -> list[str]:
@@ -57,6 +59,7 @@ def test_all_expected_tables_exist(admin: psycopg.Connection) -> None:
         "api_usage",
         "rate_limit_buckets",
         "password_credentials",
+        *ANALYTICS_VIEWS,
     }
 
 
@@ -115,7 +118,7 @@ def test_rls_enabled_on_every_table(admin: psycopg.Connection) -> None:
 
 def test_policies_target_only_app_role(admin: psycopg.Connection) -> None:
     rows = admin.execute("select tablename, roles from pg_policies where schemaname = 'idea_ws'").fetchall()
-    assert {r[0] for r in rows} == set(idea_ws_tables(admin))
+    assert {r[0] for r in rows} == set(idea_ws_tables(admin)) - ANALYTICS_VIEWS
     assert all(r[1] == ["idea_ws_app"] for r in rows)
 
 
@@ -128,7 +131,12 @@ def test_app_role_cannot_bypass_rls_or_administer(admin: psycopg.Connection) -> 
 
 def test_app_role_privileges(admin: psycopg.Connection) -> None:
     for table in idea_ws_tables(admin):
-        expected = {"SELECT"} if table in CONTENT_TABLES else {"SELECT", "INSERT", "UPDATE", "DELETE"}
+        if table in ANALYTICS_VIEWS:
+            expected: set[str] = set()
+        elif table in CONTENT_TABLES:
+            expected = {"SELECT"}
+        else:
+            expected = {"SELECT", "INSERT", "UPDATE", "DELETE"}
         granted = {
             privilege
             for privilege in TABLE_PRIVILEGES

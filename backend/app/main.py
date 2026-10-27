@@ -1,4 +1,5 @@
-"""FastAPI アプリ。ローカルは `npm run dev:api`、本番は Vercel Function として /api/* を受ける"""
+"""FastAPI アプリ。ローカルは `npm run dev:api`（画面は Vite が配信）。
+本番は Vercel の FastAPI として /api/* を受け、ビルド済みの画面（dist/）も配信する"""
 
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ from psycopg import errors as pg_errors
 
 from backend.app import config
 from backend.app.db import create_pool
-from backend.app.routers import account, ai, auth, cron, workspace
+from backend.app.routers import account, ai, auth, cron, events, workspace
 from backend.app.services.workspace_repo import ConflictError, LimitExceededError, NotFoundError
 
 
@@ -27,6 +28,36 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Idea Workspace API", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+
+
+# 画面は自分のオリジンと Cloudflare Turnstile だけを読み込む
+CONTENT_SECURITY_POLICY = "; ".join(
+    [
+        "default-src 'self'",
+        "script-src 'self' https://challenges.cloudflare.com",
+        "frame-src https://challenges.cloudflare.com",
+        "connect-src 'self'",
+        "img-src 'self' data:",
+        "style-src 'self' 'unsafe-inline'",
+        "font-src 'self' data:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+        "frame-ancestors 'none'",
+    ]
+)
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
+    response = await call_next(request)
+    response.headers.setdefault("Content-Security-Policy", CONTENT_SECURITY_POLICY)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    if config.get_settings().cookie_secure:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 
 
 @app.middleware("http")
@@ -62,3 +93,8 @@ app.include_router(account.router, prefix="/api")
 app.include_router(cron.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
 app.include_router(workspace.router, prefix="/api")
+app.include_router(events.router, prefix="/api")
+
+# ビルド済みの画面を配信する（API のルートが常に優先され、画面の URL を直接開いたときは index.html を返す）
+if config.DIST_DIR.is_dir():
+    app.frontend("/", directory=config.DIST_DIR)

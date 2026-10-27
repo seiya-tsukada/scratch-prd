@@ -26,6 +26,10 @@ dev = [
 [tool.uv]
 package = false
 
+# Vercel（FastAPI）のエントリポイント
+[tool.vercel]
+entrypoint = "backend.app.main:app"
+
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
 addopts = "-ra"

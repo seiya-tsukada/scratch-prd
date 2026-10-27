@@ -12,6 +12,7 @@ import { AccountDialog } from './components/AccountDialog';
 import { SignupPrompt } from './components/SignupPrompt';
 import { useSession } from './components/GuestGate';
 import { isSnoozed, signupPromptStorage, SignupPromptTrigger } from './utils/signupPrompt';
+import { track } from './services/analytics';
 import { ProjectData, PrdInput, workspaceRepository } from './services/apiWorkspaceRepository';
 import { NoteSaveQueue } from './services/noteSaveQueue';
 import { clearLegacyData, findLegacyProjects, LegacyProjectSummary, removeLegacyProject } from './services/legacyImport';
@@ -197,6 +198,7 @@ export default function App() {
   );
 
   useEffect(() => {
+    track({ name: 'app_opened' });
     loadWorkspace(lastProject.get())
       .then(() => {
         setLoadState('ready');
@@ -516,6 +518,7 @@ export default function App() {
       if (isSnoozed(signupPromptStorage.read())) return;
       shownPromptTriggers.current.add(trigger);
       setSignupPrompt(trigger);
+      track({ name: 'signup_prompt_shown', properties: { trigger } });
     },
     [user.isGuest]
   );
@@ -536,6 +539,7 @@ export default function App() {
   }, [offerSignup]);
 
   const openAuth = (mode: AuthMode) => {
+    if (mode === 'register') track({ name: 'signup_started', properties: { method: 'password' } });
     setSignupPrompt(null);
     setIsAccountOpen(false);
     setAuthMode(mode);

@@ -11,6 +11,7 @@ from backend.app import config, security
 from backend.app.db import Conn, Db
 from backend.app.models.auth import GuestRequest, LoginRequest, MeResponse, MeUser, RegisterRequest
 from backend.app.services import accounts
+from backend.app.services.events import record_event
 from backend.app.services.rate_limit import consume_rate_limit, enforce_rate_limit
 from backend.app.services.samples import copy_active_sample
 from backend.app.services.turnstile import TurnstileVerifier, get_turnstile_verifier
@@ -56,6 +57,7 @@ async def create_guest(
         token = await create_session(db, user_id, is_guest=True, request=request)
 
     security.set_session_cookie(response, token, session_ttl(is_guest=True))
+    await record_event(db, user_id, "guest_created")
     return MeResponse(user=MeUser(id=user_id, is_guest=True))
 
 
@@ -91,6 +93,7 @@ async def register(
     except accounts.AlreadyRegisteredError as e:
         raise HTTPException(status_code=409, detail={"code": "already_registered"}) from e
 
+    await record_event(db, user.user_id, "signup_completed", {"method": "password"})
     display_name = body.display_name or user.display_name
     return MeResponse(user=MeUser(id=user.user_id, is_guest=False, email=body.email, display_name=display_name))
 
@@ -123,6 +126,9 @@ async def login(body: LoginRequest, request: Request, response: Response, db: Db
         else:
             await start_session(db, request, response, creds.user_id, previous=current)
         await db.execute("update idea_ws.users set last_active_at = now() where id = %s", (creds.user_id,))
+
+    if guest is not None and body.guest_data == "merge":
+        await record_event(db, creds.user_id, "account_merged")
 
     return MeResponse(user=MeUser(id=creds.user_id, is_guest=False, email=creds.email, display_name=creds.display_name))
 

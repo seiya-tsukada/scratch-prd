@@ -192,6 +192,14 @@
 | 11 | 本番のマイグレーション適用 | Supabase CLI の `supabase db push --db-url`（直接接続、postgres ロール） |
 | 12 | idea_ws_app のパスワード | マイグレーションではログイン不可で作成。本番は手作業で設定（docs/supabase-setup.md） |
 
+### Phase 6 で追加した決定
+| # | 論点 | 決定 |
+|---|---|---|
+| 17 | Vercel の構成 | FastAPI プリセット 1 つで API と画面（`app.frontend` で dist/）を配信。Services（ベータ）は使わない |
+| 18 | プレビュー環境の DB | 本番とは別の Supabase プロジェクト |
+| 19 | 計測イベント | API で起きる出来事はサーバー側で記録。フロントからは画面上の操作だけ受け付ける |
+| 20 | Cron | 毎日 `0 18 * * *`（JST 3 時台） |
+
 ### Phase 5 で追加した決定
 | # | 論点 | 決定 |
 |---|---|---|

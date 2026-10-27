@@ -12,6 +12,8 @@ from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+# Vite のビルド結果。あれば FastAPI が配信する（Vercel 上）。ローカル開発では Vite が配信する
+DIST_DIR = REPO_ROOT / "dist"
 
 # .env.example に記載しているプレースホルダー。この値のままなら未設定とみなす
 GEMINI_API_KEY_PLACEHOLDER = "MY_GEMINI_API_KEY"
@@ -36,6 +38,11 @@ class Settings(BaseSettings):
     trust_proxy_headers: bool = False
     # Vercel Cron が Authorization: Bearer で送る秘密（16 文字以上のランダム文字列）
     cron_secret: SecretStr | None = None
+    # Vercel が自動で設定するシステム環境変数（ドメインのみ、https:// なし）。プレビューの URL は毎回変わるため、
+    # このデプロイ自身の URL を許可する Origin に自動で加える
+    vercel_url: str | None = None
+    vercel_branch_url: str | None = None
+    vercel_project_production_url: str | None = None
 
     @property
     def effective_gemini_api_key(self) -> str | None:
@@ -44,7 +51,11 @@ class Settings(BaseSettings):
 
     @property
     def allowed_origin_list(self) -> list[str]:
-        return [o.strip().rstrip("/") for o in self.allowed_origins.split(",") if o.strip()]
+        origins = [o.strip().rstrip("/") for o in self.allowed_origins.split(",") if o.strip()]
+        for host in (self.vercel_url, self.vercel_branch_url, self.vercel_project_production_url):
+            if host:
+                origins.append(f"https://{host}")
+        return origins
 
 
 @lru_cache
@@ -116,6 +127,8 @@ MAX_DISPLAY_NAME_CHARS = 100
 LOGIN_RATE_LIMIT_PER_IP = (10, 15 * 60)
 LOGIN_RATE_LIMIT_PER_EMAIL = (5, 15 * 60)
 REGISTER_RATE_LIMIT_PER_IP = (5, 60 * 60)
+# 計測イベントの受信（セッションごと）
+EVENTS_RATE_LIMIT_PER_SESSION = (300, 60 * 60)
 
 TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 TURNSTILE_TIMEOUT_SECONDS = 10
