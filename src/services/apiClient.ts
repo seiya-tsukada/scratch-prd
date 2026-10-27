@@ -8,12 +8,13 @@ import {
 } from '../config/api';
 import { SESSION_EXPIRED_EVENT } from '../config/app';
 
-/** サーバーが返したエラー。code は detail.code（あれば） */
+/** サーバーが返したエラー。code は detail.code、detail はサーバーが返した detail（あれば） */
 export class ApiError extends Error {
   constructor(
     message: string,
     readonly status: number,
-    readonly code?: string
+    readonly code?: string,
+    readonly detail?: unknown
   ) {
     super(message);
   }
@@ -22,6 +23,7 @@ export class ApiError extends Error {
 /** サーバーが入力を拒否したときの表示文言（入力上限は画面側でも事前に確認している） */
 const STATUS_MESSAGES: Record<number, string> = {
   401: 'セッションの有効期限が切れました。画面の案内に従って再開してください。',
+  404: '対象のデータが見つかりませんでした。画面を再読み込みしてください。',
   413: '送信するデータが大きすぎます。メモの数や文字数を減らしてください。',
   422: '入力内容が上限を超えているか、形式が正しくありません。メモの数や文字数を確認してください。',
 };
@@ -30,6 +32,8 @@ const CODE_MESSAGES: Record<string, string> = {
   invalid_origin: 'このページからのリクエストを受け付けられませんでした。ページを再読み込みしてください。',
   turnstile_failed: 'ボット対策の確認に失敗しました。もう一度お試しください。',
   rate_limited: '短時間にリクエストが集中しています。しばらく待ってからお試しください。',
+  limit_exceeded: '保存できる件数の上限に達しました。不要なデータを削除してからお試しください。',
+  conflict: '他の画面で先に更新されていました。',
 };
 
 const QUOTA_KIND_LABELS: Record<QuotaExceededDetail['kind'], string> = {
@@ -46,17 +50,17 @@ async function toApiError(response: Response, errorPrefix: string): Promise<ApiE
   const code: string | undefined = typeof detail?.code === 'string' ? detail.code : undefined;
 
   if (code === 'quota_exceeded') {
-    return new ApiError(quotaMessage(detail as QuotaExceededDetail), response.status, code);
+    return new ApiError(quotaMessage(detail as QuotaExceededDetail), response.status, code, detail);
   }
   const message =
     (code && CODE_MESSAGES[code]) ?? STATUS_MESSAGES[response.status] ?? `${errorPrefix}: ${response.statusText}`;
-  return new ApiError(message, response.status, code);
+  return new ApiError(message, response.status, code, detail);
 }
 
 /** Cookie セッション付きで API を呼ぶ。401 のときはセッション切れを画面に知らせる */
 export async function requestJson<TResponse>(
   url: string,
-  init: { method?: 'GET' | 'POST'; body?: unknown } = {},
+  init: { method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'; body?: unknown } = {},
   errorPrefix = 'サーバーエラー'
 ): Promise<TResponse> {
   const response = await fetch(url, {

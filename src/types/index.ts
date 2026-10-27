@@ -111,14 +111,15 @@ export interface PaneInfo {
   noteId: string | null;
 }
 
+/** 未保存のプロジェクトでは id / updatedAt の無い既定値が返る */
 export interface WorkspacePreferences {
-  id: string;
+  id?: string;
   userId: string;
   projectId: string;
   paneCount: PaneCount;
   panes: PaneInfo[];
   activePaneId: string;
-  updatedAt: string;
+  updatedAt?: string;
 }
 
 export type SaveStatus = 'saved' | 'saving' | 'error';

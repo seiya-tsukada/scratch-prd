@@ -15,9 +15,6 @@ export const NOTE_LABEL_PREVIEW_LENGTH = 20;
 /** 新規メモの保存先として優先するセクション名のキーワード（小文字比較） */
 export const INBOX_SECTION_KEYWORD = 'inbox';
 
-/** セクションが見つからないときのフォールバックID */
-export const FALLBACK_SECTION_ID = 'sec-default';
-
 /** 各種タイミング (ms) */
 export const TIMING = {
   NOTE_AUTOSAVE_DEBOUNCE_MS: 300,

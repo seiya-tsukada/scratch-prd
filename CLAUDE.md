@@ -4,7 +4,7 @@ Idea Workspace（scratch-prd）で作業する Claude Code 向けのガイド。
 思いつきのメモを、開発・検証できる PRD へ育てる個人向けワークスペース。
 **アカウント登録は任意**で、未登録（ゲスト）でも全機能を使える。差がつくのは AI 利用上限だけ。
 
-> 現在は移行中。Express + localStorage の構成から、Vite SPA + FastAPI + Supabase Postgres（自前認証）へ段階的に作り替えている。
+> 現在は移行中。Phase 4b でデータ層は FastAPI + Supabase Postgres に移行済み（Express・localStorage 実装は削除）。
 > フェーズごとの計画と進捗は [docs/migration-plan.md](docs/migration-plan.md) を参照。
 
 ---
@@ -28,7 +28,7 @@ Vercel（同一リポジトリ・同一ドメイン）
 | 領域 | 方針 |
 |---|---|
 | フロント | Vite の静的ビルド。DB には一切触らず、すべて `/api` 経由 |
-| バックエンド | Python（FastAPI）。Express（`server.ts`, `server/*`）は移行完了後に削除する |
+| バックエンド | Python（FastAPI）。旧 Express サーバーは Phase 4b で削除済み |
 | DB | Supabase の Postgres を**マネージド Postgres として**使う。専用スキーマ `idea_ws` のみ |
 | 認証 | **自前実装**。ユーザーは `idea_ws.users`。セッションは不透明トークン（Cookie）＋ DB にハッシュ保存。JWT は使わない |
 | 認可 | すべて Python 側。ユーザー配下データのクエリには必ず `user_id` 条件を付ける |
@@ -40,7 +40,7 @@ Vercel（同一リポジトリ・同一ドメイン）
 |---|---|
 | ユーザー・認証（users, user_identities, sessions, email_login_tokens, oauth_states） | `idea_ws` |
 | ユーザーデータ（projects, sections, notes, prd_documents, prd_versions, workspace_preferences） | `idea_ws` |
-| コンテンツ（section_templates, sample_contents） | `idea_ws`（デプロイ無しで初回体験を調整するため。`src/config/seed.ts` は移行後に削除） |
+| コンテンツ（section_templates, sample_contents） | `idea_ws`（デプロイ無しで初回体験を調整するため） |
 | グロース計測（events, ai_generations, api_usage） | `idea_ws` |
 | 秘密情報（DB 接続文字列・API キー・pepper 等） | Vercel の環境変数のみ。フロントに渡してよいのは `VITE_` 接頭辞の公開値だけ |
 | ブラウザ | セッション Cookie（httpOnly）のみ。旧 localStorage（`idea_workspace_*_v2`）は初回インポート後に削除する |
@@ -71,18 +71,17 @@ Vercel（同一リポジトリ・同一ドメイン）
 
 ## ディレクトリ構成
 
-現状（移行前）:
+フロント（Phase 4b 時点）:
 
 ```
-server.ts                Express エントリ（API・静的配信）※Phase 4 で削除
-server/                  プロンプト・フォールバック・Gemini 呼び出し ※Phase 2 で Python へ移植、Phase 4 で削除
 src/
-  config/                定数・定義（api.ts は API の型、prd.ts は表示定義、seed.ts はサンプル）
-  services/              workspaceRepository.ts（localStorage 実装）, apiClient.ts
+  config/                定数・定義（api.ts は AI・認証 API の型、prd.ts は表示定義、legacyStorage.ts は旧 localStorage キー）
+  services/              apiWorkspaceRepository.ts（Workspace API）, noteSaveQueue.ts（メモの自動保存）,
+                         legacyImport.ts（旧データの取り込み）, apiClient.ts, session.ts, turnstile.ts
   components/ hooks/ utils/ types/
 ```
 
-目標（Phase ごとに追加。Vercel の最新仕様に合わせて調整する場合は相談）:
+バックエンド（Phase ごとに追加。Vercel の最新仕様に合わせて調整する場合は相談）:
 
 ```
 backend/
@@ -120,7 +119,6 @@ cp .env.example .env                        # ローカル用の値入り。GEMI
 docker compose up -d && uv run python -m backend.scripts.db_reset
 npm run dev                                 # FastAPI（:8000）と Vite（:3000、/api を :8000 へ proxy）を同時起動
 npm run dev:api / npm run dev:web           # 個別に起動する場合
-npm run dev:legacy                          # 旧構成: Express（Phase 3 以降のフロントとは非互換。4b で削除）
 npm run lint                                # tsc --noEmit
 npm test                                    # vitest
 ```
@@ -155,7 +153,6 @@ Workspace API（Phase 4a〜）:
 
 AI（Phase 2〜）:
 
-- AI エンドポイント（`/api/structure-rough-note`, `/api/generate-prd`, `/api/health`）は FastAPI と Express の両方にある（4b まで）。`src/config/api.ts` の型を変えたら両方を直す。
 - AI の入力上限は `backend/app/config.py` と `src/config/api.ts` の `AI_INPUT_LIMITS` に同じ値を書く（`backend/tests/test_limits_sync.py` が検証）。
 - AI が使えないときは内蔵ジェネレータで応答し、`usedFallback: true` と `fallbackReason` を返す。フロントは `FallbackNotice` で必ず明示する。
 - Gemini を呼ぶときだけ日次クォータ（`config.AI_DAILY_QUOTAS`）を消費し、超過は 429（`quota_exceeded`）。すべての生成を `ai_generations` に記録する。
@@ -178,5 +175,7 @@ AI（Phase 2〜）:
 
 ### TypeScript / React
 - 既存規約を踏襲: 関数コンポーネント + hooks、Tailwind のクラスは完全な文字列で書く（動的生成しない）、`src/config/api.ts` が API の型の単一の出所。
-- データアクセスは `IWorkspaceRepository` 経由に限定し、コンポーネントから `fetch` を直接呼ばない（`services/` に置く）。
+- データアクセスは `IWorkspaceRepository`（`services/apiWorkspaceRepository.ts`）経由に限定し、コンポーネントから `fetch` を直接呼ばない（`services/` に置く）。
+- メモの編集は画面を先に更新し、保存は `NoteSaveQueue` に任せる（メモごとに直列化・競合時は「（競合コピー）」として退避）。それ以外の操作は API の結果を待ってから画面に反映する。
+- localStorage はデータの保存に使わない（例外: 最後に開いたプロジェクト ID などの表示上の利便のみ）。
 - テストは vitest。`npm run lint` と `npm test` を通す。

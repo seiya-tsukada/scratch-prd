@@ -10,7 +10,6 @@ import {
   FolderOpen,
   Plus,
   Trash2,
-  Database,
   Menu,
   ChevronDown,
   Edit2,
@@ -73,7 +72,8 @@ interface HeaderProps {
   onChangePaneCount: (count: PaneCount) => void;
   onOpenStructureRoughNote: () => void;
   onOpenPrdGenerator: () => void;
-  onOpenSupabaseGuide: () => void;
+  /** 保存に失敗したメモをもう一度保存する */
+  onRetrySave: () => void;
   onToggleSidebar: () => void;
 }
 
@@ -91,7 +91,7 @@ export const Header: React.FC<HeaderProps> = ({
   onChangePaneCount,
   onOpenStructureRoughNote,
   onOpenPrdGenerator,
-  onOpenSupabaseGuide,
+  onRetrySave,
   onToggleSidebar,
 }) => {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
@@ -229,10 +229,17 @@ export const Header: React.FC<HeaderProps> = ({
           )}
         </div>
 
-        {/* Save Status Badge */}
-        <div className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60">
+        {/* Save Status Badge（失敗時はクリックで再試行） */}
+        <button
+          type="button"
+          onClick={saveStatus === 'error' ? onRetrySave : undefined}
+          disabled={saveStatus !== 'error'}
+          title={saveStatus === 'error' ? 'クリックして保存を再試行' : undefined}
+          className="hidden sm:flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-zinc-100 dark:bg-zinc-800/80 border border-zinc-200 dark:border-zinc-700/60 enabled:hover:border-rose-300 enabled:cursor-pointer disabled:cursor-default"
+        >
           {SAVE_STATUS_BADGE[saveStatus]}
-        </div>
+          {saveStatus === 'error' && <span className="text-rose-500 underline">再試行</span>}
+        </button>
       </div>
 
       {/* Right side: Pane switcher & AI PRD Action */}
@@ -255,17 +262,6 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           ))}
         </div>
-
-        {/* Supabase Arch Info Button */}
-        <button
-          type="button"
-          onClick={onOpenSupabaseGuide}
-          className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors border border-transparent hover:border-zinc-200 dark:hover:border-zinc-700"
-          title="Supabase PostgreSQL / Auth 設計書を見る"
-        >
-          <Database className="w-3.5 h-3.5 text-emerald-500" />
-          <span>Supabase設計</span>
-        </button>
 
         {/* Action 1: 殴り書きをPRD構造化テキストに修正 */}
         <button

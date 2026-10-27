@@ -54,7 +54,6 @@ interface SidebarProps {
   onRenameSection: (sectionId: string, newName: string) => void;
   onDeleteSection: (sectionId: string) => void;
   onOpenPrd: (prdId: string) => void;
-  onOpenSupabaseGuide: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -72,7 +71,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onRenameSection,
   onDeleteSection,
   onOpenPrd,
-  onOpenSupabaseGuide,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
@@ -512,18 +510,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             )}
           </div>
         </div>
-      </div>
-
-      {/* Footer Info & Supabase sync badge */}
-      <div className="p-2.5 border-t border-zinc-200/80 dark:border-zinc-800/80 bg-zinc-100/50 dark:bg-zinc-900/50 flex items-center justify-between text-xs">
-        <button
-          type="button"
-          onClick={onOpenSupabaseGuide}
-          className="flex items-center gap-1.5 text-[11px] text-zinc-600 dark:text-zinc-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-        >
-          <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-          <span>Supabase Auth & RLS ready</span>
-        </button>
       </div>
     </aside>
   );

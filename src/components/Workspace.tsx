@@ -7,6 +7,8 @@ interface WorkspaceProps {
   panes: PaneInfo[];
   notes: Note[];
   sections: Section[];
+  /** メモ ID ごとの読み直し回数（NotePane の syncKey） */
+  noteRevisions: Record<string, number>;
   activePaneId: string;
   onActivatePane: (paneId: string) => void;
   onSelectNoteInPane: (paneIndex: number, noteId: string) => void;
@@ -31,6 +33,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   panes,
   notes,
   sections,
+  noteRevisions,
   activePaneId,
   onActivatePane,
   onSelectNoteInPane,
@@ -51,6 +54,7 @@ export const Workspace: React.FC<WorkspaceProps> = ({
             <NotePane
               paneIndex={index}
               note={notes.find((n) => n.id === pane.noteId) || null}
+              syncKey={pane.noteId ? noteRevisions[pane.noteId] : undefined}
               allNotes={notes}
               sections={sections}
               isActive={activePaneId === pane.id}
