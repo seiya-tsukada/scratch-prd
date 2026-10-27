@@ -72,7 +72,9 @@ MAX_NOTE_CONTENT_CHARS = 20_000
 MAX_TOTAL_NOTE_CHARS = 100_000
 MAX_ROUGH_NOTE_CHARS = 20_000
 MAX_TITLE_CHARS = 200
-MAX_EXISTING_PRD_CHARS = 50_000
+# 再生成時に渡す前回の PRD の要約（見出し・事実・未決事項・決定事項）の件数と 1 件あたりの文字数
+MAX_PREVIOUS_ITEMS = 100
+MAX_PREVIOUS_ITEM_CHARS = 1_000
 
 # これを超える Content-Length のリクエストは 413
 MAX_REQUEST_BYTES = 1_000_000
@@ -134,9 +136,6 @@ TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverif
 TURNSTILE_TIMEOUT_SECONDS = 10
 
 USER_AGENT_MAX_CHARS = 500
-
-# PRD 再生成時にプロンプトへ含める既存PRDの最大文字数
-EXISTING_PRD_CONTEXT_MAX_CHARS = 1000
 
 # フォールバック PRD で各メモから抜き出す本文の最大文字数
 MOCK_FACT_MAX_CHARS = 100

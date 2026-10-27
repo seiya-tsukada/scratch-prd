@@ -119,7 +119,9 @@ def test_generate_prd_empty_markdown_uses_placeholder(client: TestClient) -> Non
             ]
         },
         {"notes": [{"id": "n1", "title": "t" * (config.MAX_TITLE_CHARS + 1), "content": "x"}]},
-        {"existingPrd": "x" * (config.MAX_EXISTING_PRD_CHARS + 1)},
+        {"previousPrd": {"facts": ["x" * (config.MAX_PREVIOUS_ITEM_CHARS + 1)]}},
+        {"previousPrd": {"headings": ["h"] * (config.MAX_PREVIOUS_ITEMS + 1)}},
+        {"previousPrd": {"decisions": [{"question": "q", "answer": "a" * (config.MAX_PREVIOUS_ITEM_CHARS + 1)}]}},
         {"mode": "unknown"},
     ],
 )

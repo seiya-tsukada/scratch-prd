@@ -127,3 +127,15 @@ def test_login_without_merge_records_no_merge_event(
     register(guest_client)
     login(make_client(), password=PASSWORD)
     assert "account_merged" not in names(db_admin)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"name": "open_question_answered"},
+        {"name": "prd_regenerated_with_answers", "properties": {"answers": 2}},
+        {"name": "contradiction_viewed", "properties": {"count": 1}},
+    ],
+)
+def test_prd_loop_events_are_accepted(guest_client: TestClient, body: dict[str, Any]) -> None:
+    assert guest_client.post("/api/events", json=body).status_code == 204

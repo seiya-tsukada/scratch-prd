@@ -18,7 +18,8 @@ export const AI_INPUT_LIMITS = {
   MAX_TOTAL_NOTE_CHARS: 100_000,
   MAX_ROUGH_NOTE_CHARS: 20_000,
   MAX_TITLE_CHARS: 200,
-  MAX_EXISTING_PRD_CHARS: 50_000,
+  MAX_PREVIOUS_ITEMS: 100,
+  MAX_PREVIOUS_ITEM_CHARS: 1_000,
 } as const;
 
 /** AI ではなく内蔵ジェネレータで応答した理由 */
@@ -124,7 +125,18 @@ export interface GeneratePrdRequest {
   mode: PrdGenerationMode;
   detailLevel: PrdDetailLevel;
   notes: PrdNoteInput[];
-  existingPrd?: string;
+  /** 再生成時の前回の PRD の要約（本文は渡さない） */
+  previousPrd?: PreviousPrd;
+}
+
+/** backend/app/models/ai.py の PreviousPrd */
+export interface PreviousPrd {
+  title: string;
+  headings: string[];
+  facts: string[];
+  openQuestions: { question: string; context?: string }[];
+  /** 未決事項への回答。確定した事実として扱われる */
+  decisions: { question: string; answer: string }[];
 }
 
 export interface GeneratePrdResponse extends AiResultMeta {

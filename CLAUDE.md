@@ -165,7 +165,8 @@ Workspace API（Phase 4a〜）:
 - イベントは `backend/app/services/events.py` のホワイトリスト（`EVENT_SCHEMAS`）に追加してから使う。API で起きる出来事はサーバー側で `record_event`、画面上の操作だけ `src/services/analytics.ts` の `track`（`CLIENT_EVENTS`）。properties に個人情報・メモ本文を入れない。
 - 本番では FastAPI が `dist/` も配信する（`app.frontend`）。セキュリティヘッダー（CSP など）は `main.py`。外部のスクリプト・画像を足すときは CSP も直す。
 - 環境変数を足したら `docs/deploy.md` の表と `.env.example` を更新する。
-- 初回の案内と「貼るだけ PRD」は `QuickPrdDialog` を共有する（Phase 7）。PRD 生成は `App.tsx` の `generatePrdFromNotes` に集約している。サーバー側の秘密は `scripts/check-bundle-secrets.mjs` の `SERVER_ONLY_ENV` にも足す。
+- 初回の案内と「貼るだけ PRD」は `QuickPrdDialog` を共有する（Phase 7）。PRD 生成は `App.tsx` の `generatePrdFromNotes` に集約している。
+- 再生成では PRD 本文を AI に渡さず、`src/utils/prdLoop.ts` の `buildPreviousPrd` で作った要約（`previousPrd`）を渡す。未決事項への回答は「決定事項」セクションのメモで、タイトルの形式（`decisionTitle`）で回答済みを判定している（Phase 8）。サーバー側の秘密は `scripts/check-bundle-secrets.mjs` の `SERVER_ONLY_ENV` にも足す。
 
 AI（Phase 2〜）:
 

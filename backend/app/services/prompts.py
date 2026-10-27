@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from backend.app.config import DEFAULT_PROJECT_NAME, EXISTING_PRD_CONTEXT_MAX_CHARS
+from backend.app.config import DEFAULT_PROJECT_NAME
 from backend.app.models.ai import (
     DEFAULT_DETAIL_LEVEL,
     DEFAULT_GENERATION_MODE,
     GeneratePrdRequest,
     PrdDetailLevel,
     PrdGenerationMode,
+    PreviousPrd,
     StructureRoughNoteRequest,
 )
 
@@ -64,6 +65,37 @@ Output strictly valid JSON with this format:
 }}'''
 
 
+CONTRADICTION_RULES = """Contradictions:
+- Compare the notes with each other. If two or more notes disagree (target users, scope, requirements, priorities, numbers, platforms, deadlines, etc.), add one item to "contradictions" per disagreement.
+- "issue": explain in Japanese what disagrees and why it matters, quoting both sides briefly.
+- "notesInvolved": the exact note IDs (from "ID: ...") of every note involved. Never use titles here.
+- Do not resolve the contradiction yourself in the PRD; mention it as undecided and add a matching open question.
+- If there is no disagreement, return an empty array. Do not invent contradictions.
+Example: {"id": "c-1", "issue": "対象ユーザーが矛盾: メモAは「個人開発者向け」、メモBは「企業の開発チーム向け」としている", "notesInvolved": ["<note id A>", "<note id B>"]}"""
+
+
+def _bullets(items: list[str]) -> str:
+    return "\n".join(f"- {item}" for item in items) if items else "- (なし)"
+
+
+def build_previous_prd_context(previous: PreviousPrd) -> str:
+    """前回の PRD の要約。見出し構成を保ち、決定事項は確定した事実として扱わせる"""
+    open_questions = [f"{q.question}（{q.context}）" if q.context else q.question for q in previous.open_questions]
+    decisions = [f"Q: {d.question} → A: {d.answer}" for d in previous.decisions]
+    return f"""This is a regeneration of an existing PRD{f" titled「{previous.title}」" if previous.title else ""}. Previous PRD summary:
+Section outline (keep this structure unless the notes require a change):
+{_bullets(previous.headings)}
+Confirmed facts in the previous version (keep them unless the notes contradict them):
+{_bullets(previous.facts)}
+Open questions in the previous version:
+{_bullets(open_questions)}
+Decisions made by the user (answers to open questions):
+{_bullets(decisions)}
+Rules for regeneration:
+- Treat every decision as a confirmed fact: reflect it in the PRD body and include it in "facts".
+- Remove open questions that a decision answers. Keep the other open questions unless the notes answer them."""
+
+
 def build_generate_prd_prompt(request: GeneratePrdRequest) -> str:
     """複数メモから PRD を生成するプロンプト"""
     notes_content = "\n---\n".join(
@@ -74,11 +106,7 @@ def build_generate_prd_prompt(request: GeneratePrdRequest) -> str:
 
     mode_instructions = MODE_INSTRUCTIONS[request.mode or DEFAULT_GENERATION_MODE]
     detail_instructions = DETAIL_INSTRUCTIONS[request.detail_level or DEFAULT_DETAIL_LEVEL]
-    existing_prd = (
-        f"Previous PRD Reference:\n{request.existing_prd[:EXISTING_PRD_CONTEXT_MAX_CHARS]}"
-        if request.existing_prd
-        else ""
-    )
+    previous_prd = build_previous_prd_context(request.previous_prd) if request.previous_prd else ""
 
     system_prompt = f"""You are a senior product manager. Transform fragmented user notes into a clear, concise, actionable Product Requirements Document (PRD) in Japanese.
 Rules:
@@ -89,7 +117,8 @@ Rules:
 Project: {request.project_name}
 Mode: {mode_instructions}
 Detail: {detail_instructions}
-{existing_prd}"""
+{CONTRADICTION_RULES}
+{previous_prd}"""
 
     user_prompt = f"""Source notes:
 {notes_content}
@@ -106,7 +135,9 @@ Output strictly valid JSON with this shape:
   "openQuestions": [
     {{ "id": "oq-1", "question": "question", "context": "context", "urgency": "critical|normal" }}
   ],
-  "contradictions": []
+  "contradictions": [
+    {{ "id": "c-1", "issue": "what disagrees between notes", "notesInvolved": ["note-id", "note-id"] }}
+  ]
 }}"""
 
     return f"{system_prompt}\n\n{user_prompt}"
