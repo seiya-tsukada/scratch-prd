@@ -27,6 +27,7 @@ os.environ.update(
         "TRUST_PROXY_HEADERS": "false",
         "GEMINI_API_KEY": "MY_GEMINI_API_KEY",
         "TURNSTILE_SECRET_KEY": "",
+        "CRON_SECRET": "test-cron-secret-0123456789",
     }
 )
 
@@ -106,6 +107,22 @@ def guest_client(client: TestClient) -> TestClient:
     """ゲストとしてログイン済みのクライアント"""
     login_guest(client)
     return client
+
+
+@pytest.fixture
+def make_client(client: TestClient) -> Iterator[Any]:
+    """別のブラウザに相当するクライアント（Cookie を共有しない）を作る。ログインはしない"""
+    opened: list[TestClient] = []
+
+    def factory() -> TestClient:
+        c = TestClient(app, headers={"Origin": TEST_ORIGIN})
+        c.__enter__()
+        opened.append(c)
+        return c
+
+    yield factory
+    for c in opened:
+        c.__exit__(None, None, None)
 
 
 @pytest.fixture

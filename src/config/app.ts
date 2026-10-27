@@ -45,3 +45,13 @@ export const TURNSTILE_SCRIPT_URL = 'https://challenges.cloudflare.com/turnstile
 
 /** セッションが切れた（API が 401 を返した）ことを知らせるウィンドウイベント */
 export const SESSION_EXPIRED_EVENT = 'idea-workspace:session-expired';
+
+/** AI の利用上限に達し、登録で上限が上がる（ゲスト）ことを知らせるウィンドウイベント */
+export const QUOTA_UPGRADE_EVENT = 'idea-workspace:quota-upgrade';
+
+/** 登録の案内（押し付けない: 閉じたら一定期間は出さない） */
+export const SIGNUP_PROMPT = {
+  DISMISS_DAYS: 7,
+  NOTE_COUNT_THRESHOLD: 10,
+  DISMISSED_AT_STORAGE_KEY: 'idea_workspace_signup_prompt_dismissed_at',
+} as const;

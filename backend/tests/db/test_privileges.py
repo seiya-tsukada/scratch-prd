@@ -56,6 +56,7 @@ def test_all_expected_tables_exist(admin: psycopg.Connection) -> None:
         "ai_generations",
         "api_usage",
         "rate_limit_buckets",
+        "password_credentials",
     }
 
 

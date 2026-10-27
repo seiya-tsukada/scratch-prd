@@ -43,7 +43,14 @@ export const API_ENDPOINTS = {
   AUTH_GUEST: '/api/auth/guest',
   AUTH_ME: '/api/auth/me',
   AUTH_LOGOUT: '/api/auth/logout',
+  AUTH_REGISTER: '/api/auth/register',
+  AUTH_LOGIN: '/api/auth/login',
+  ACCOUNT: '/api/account',
+  ACCOUNT_PASSWORD: '/api/account/password',
 } as const;
+
+/** パスワードの条件（backend/app/config.py と同じ） */
+export const PASSWORD_RULES = { MIN_CHARS: 10, MAX_CHARS: 128 } as const;
 
 /** ログイン中のユーザー（backend/app/models/auth.py の MeUser） */
 export interface SessionUser {
@@ -61,13 +68,38 @@ export interface GuestRequest {
   turnstileToken: string;
 }
 
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  displayName?: string;
+}
+
+/** 今のゲストにデータがあるときは guestData で統合（merge）か破棄（discard）を指定する */
+export interface LoginRequest {
+  email: string;
+  password: string;
+  guestData?: 'merge' | 'discard';
+}
+
+/** ログイン時、今のゲストにデータがあった（409） */
+export interface GuestDataExistsDetail {
+  code: 'guest_data_exists';
+  projects: number;
+  notes: number;
+}
+
 /** API が返すエラー（detail.code）。入力検証エラー（422）は detail が配列 */
 export type ApiErrorCode =
   | 'unauthenticated'
   | 'invalid_origin'
   | 'turnstile_failed'
   | 'rate_limited'
-  | 'quota_exceeded';
+  | 'quota_exceeded'
+  | 'email_taken'
+  | 'already_registered'
+  | 'invalid_credentials'
+  | 'invalid_password'
+  | 'guest_data_exists';
 
 export interface QuotaExceededDetail {
   code: 'quota_exceeded';

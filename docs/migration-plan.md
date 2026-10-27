@@ -102,17 +102,25 @@
 
 ## Phase 5：アカウント登録導線（任意登録）
 
-**ブランチ**: `feature/phase5-signup`
+**ブランチ**: `feature/phase5-account`
 
-- `routers/auth.py` に `POST /api/auth/email/start`、`GET /api/auth/email/callback`、`GET /api/auth/google/start`、`GET /api/auth/google/callback`
-- `services/mailer.py`（`Mailer` プロトコル + `ResendMailer` + テスト用 `MemoryMailer`）、Google OAuth は Authorization Code + PKCE（`oauth_states` に state と verifier）。id_token の検証方法は要確認。
-- 昇格：ゲストかつ identity 未登録 → 同じ users 行を `is_guest=false` に更新 + identity 追加 + セッション再発行
-- 既存アカウント：ゲストにデータがあれば（サンプルとユーザー作成分を区別しない）「統合する / 破棄する」を確認。`POST /api/account/merge` は 1 トランザクションで user_id 付け替え → ゲスト削除。
-- `routers/account.py`：表示名変更、ログアウト、アカウント削除（確認ダイアログ）
-- 登録導線 UI：ヘッダー常設、初回 PRD 生成直後、メモ数が閾値超え、429 時。閉じたら一定期間非表示（設定は DB）。
-- `routers/cron.py`：`Authorization: Bearer ${CRON_SECRET}` で保護し掃除関数を実行
-- ログイン系の IP レート制限
-- テスト：指示書の 4 シナリオ（メール / Google / 統合 / 削除）
+> 方針変更（Phase 5 着手時）: メールのマジックリンクと Google OAuth は**保留**とし、**メールアドレス + パスワード**の自前ログインを実装した。
+> メールアドレスの確認・パスワード再設定は、メール送信を導入するときに合わせて追加する（下記「保留事項」）。
+
+- マイグレーション `20261027000001_idea_ws_password_auth.sql`：`password_credentials`（Argon2id のハッシュ）、`user_identities.provider` に `password`、統合用に子テーブルの複合外部キーへ `on update cascade`
+- `POST /api/auth/register`：今のゲストの users 行をそのまま正規ユーザーに昇格（データはそのまま）、セッションを再発行
+- `POST /api/auth/login`：ゲストにデータがあれば 409 `guest_data_exists`。`guestData: merge | discard` を付けて再送すると、1 トランザクションで統合（`projects.user_id` の付け替えが配下へ cascade、計測データも引き継ぐ）または破棄してからログイン
+  - 指示書の `POST /api/account/merge` は、ゲストのセッションと確認済みの資格情報を同時に扱えるログイン時の処理に統合した
+- `routers/account.py`：表示名変更、パスワード変更（他のセッションを失効）、アカウント削除（登録ユーザーはパスワード再入力。ゲストは「このブラウザのデータを削除」）
+- `routers/cron.py`：`GET /api/cron/cleanup`（`Authorization: Bearer ${CRON_SECRET}`）
+- 総当たり対策：ログインは IP ごと 15 分 10 回・メールアドレスごと 15 分 5 回、登録は IP ごと 1 時間 5 回。存在しないアドレスでもダミー検証で時間を揃え、エラー文言は区別しない
+- UI：ヘッダーに「登録してデータを保護」「ログイン」、アカウント設定、統合の確認、登録の案内（初回 PRD 生成直後・メモ 10 件超え・AI 上限到達時。閉じたら 7 日間は出さない。localStorage に記録）
+- テスト：ゲストで作成 → 登録 → 別クライアントでログイン → 同じデータ／既存アカウントへの統合・破棄／アカウント削除で全データが消える、ほか
+
+### 保留事項
+- メールのマジックリンク・Google OAuth（指示書の当初案）
+- メールアドレスの確認（現状は確認しないため、他人のアドレスで先に登録される可能性がある。画面で注意喚起している）
+- パスワードの再設定（現状は手段が無い。画面で明示している）
 
 ---
 
@@ -168,7 +176,7 @@
 | # | 論点 | 決定 |
 |---|---|---|
 | 1 | アプリ用 DB ロールと RLS | 専用ロール `idea_ws_app`（BYPASSRLS なし）＋ 各テーブルに `TO idea_ws_app` 限定のポリシー。Supabase では自作ロールに BYPASSRLS を付けられないため（Phase 1 で変更）。anon / authenticated / service_role 向けポリシーは作らない |
-| 2 | IP 単位のレート制限テーブル | Phase 1 で `rate_limit_buckets` と加算関数を追加。Phase 3 のゲスト作成、Phase 5 のメール送信・OAuth で使う |
+| 2 | IP 単位のレート制限テーブル | Phase 1 で `rate_limit_buckets` と加算関数を追加。Phase 3 のゲスト作成、Phase 5 のログイン・登録で使う |
 | 3 | サンプル由来データの判定（`from_sample`） | 不要。統合確認はゲストにデータがあれば常に出す |
 | 4 | Phase 4 の分割 | 4a（API）/ 4b（フロント移行・後片付け）の 2 PR に分ける |
 | 5 | ローカル DB | Docker Compose で Supabase の Postgres イメージを使う（CI も同構成） |
@@ -183,6 +191,14 @@
 | 10 | service_role | anon / authenticated と同じく idea_ws の権限を REVOKE |
 | 11 | 本番のマイグレーション適用 | Supabase CLI の `supabase db push --db-url`（直接接続、postgres ロール） |
 | 12 | idea_ws_app のパスワード | マイグレーションではログイン不可で作成。本番は手作業で設定（docs/supabase-setup.md） |
+
+### Phase 5 で追加した決定
+| # | 論点 | 決定 |
+|---|---|---|
+| 13 | 登録方式 | メールアドレス + パスワード（自前）。メール送信・Google は保留 |
+| 14 | パスワード | Argon2id（argon2-cffi 既定値）、10〜128 文字、よく使われるパスワードは拒否 |
+| 15 | ゲストの統合 | ログイン時に merge / discard を選ぶ（独立した merge API は作らない） |
+| 16 | 登録案内の再表示抑止 | 閉じたら 7 日間。localStorage に記録 |
 
 ## PR・マージ計画
 
@@ -203,7 +219,7 @@
 | 3 | `feature/phase3-guest-session` | 2 | ゲストセッション・クォータ付き AI。フロントは起動時にゲスト発行。データはまだ localStorage |
 | 4a | `feature/phase4a-workspace-api` | 3 | Workspace API が追加（フロント未使用）。動作は 3 と同じ |
 | 4b | `feature/phase4b-frontend-migration` | 4a | データが DB に移行。Express・seed.ts・Supabase ガイド削除。**ここで旧構成が消える** |
-| 5 | `feature/phase5-signup` | 4b | メール / Google 登録・統合・アカウント削除・Cron |
+| 5 | `feature/phase5-account` | 4b | メールアドレス + パスワード登録・統合・アカウント削除・Cron |
 | 6 | `feature/phase6-analytics-deploy` | 5 | 計測・CI・Vercel 設定。**マージ後に本番デプロイ開始** |
 | 7 | `feature/phase7-activation` | 6 | オンボーディング・貼るだけ PRD |
 | 8 | `feature/phase8-prd-loop` | 6 | 矛盾検出・回答ループ（7 と独立。7 の後に着手） |

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from backend.app import config
+from fastapi import HTTPException
+
+from backend.app import config, security
 from backend.app.db import Conn
 
 
@@ -22,3 +24,11 @@ async def consume_rate_limit(conn: Conn, key: str, window_seconds: int, limit: i
 
 def ai_quota_limit(account_type: str, kind: config.AiKind) -> int:
     return config.AI_DAILY_QUOTAS[account_type][kind]
+
+
+async def enforce_rate_limit(conn: Conn, purpose: str, value: str, rule: tuple[int, int]) -> None:
+    """purpose + value（IP やメールアドレス）ごとの回数制限。値はハッシュ化してキーにする。超過は 429"""
+    limit, window_seconds = rule
+    key = f"{purpose}:{security.hash_ip(value).hex()}"
+    if not await consume_rate_limit(conn, key, window_seconds, limit):
+        raise HTTPException(status_code=429, detail={"code": "rate_limited"})

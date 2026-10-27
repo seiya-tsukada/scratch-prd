@@ -1,10 +1,26 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Loader2, ShieldCheck, AlertCircle, RotateCw } from 'lucide-react';
 import { APP_NAME, SESSION_EXPIRED_EVENT, TURNSTILE_SITE_KEY } from '../config/app';
+import type { SessionUser } from '../config/api';
 import { createGuest, fetchCurrentUser } from '../services/session';
 import { loadTurnstile } from '../services/turnstile';
 
 type GateStatus = 'checking' | 'verifying' | 'ready' | 'error';
+
+interface SessionContextValue {
+  user: SessionUser;
+  /** 登録・表示名の変更など、同じユーザーのままの更新に使う */
+  setUser: (user: SessionUser) => void;
+}
+
+const SessionContext = createContext<SessionContextValue | null>(null);
+
+/** GuestGate の内側で、ログイン中のユーザー（ゲストを含む）を取得する */
+export const useSession = (): SessionContextValue => {
+  const value = useContext(SessionContext);
+  if (!value) throw new Error('useSession must be used inside GuestGate');
+  return value;
+};
 
 /**
  * セッションが無ければ Turnstile の確認を経てゲストを作り、セッションができてから子を表示する。
@@ -14,9 +30,11 @@ export const GuestGate: React.FC<{ children: React.ReactNode }> = ({ children })
   const [status, setStatus] = useState<GateStatus>('checking');
   const [error, setError] = useState<string | null>(null);
   const [hasEnteredApp, setHasEnteredApp] = useState(false);
+  const [user, setUser] = useState<SessionUser | null>(null);
   const widgetContainer = useRef<HTMLDivElement>(null);
 
-  const enterApp = () => {
+  const enterApp = (sessionUser: SessionUser) => {
+    setUser(sessionUser);
     setStatus('ready');
     setHasEnteredApp(true);
   };
@@ -30,7 +48,7 @@ export const GuestGate: React.FC<{ children: React.ReactNode }> = ({ children })
     setStatus('checking');
     setError(null);
     fetchCurrentUser()
-      .then((user) => (user ? enterApp() : setStatus('verifying')))
+      .then((current) => (current ? enterApp(current) : setStatus('verifying')))
       .catch(() => fail('サーバーに接続できませんでした。時間をおいて再読み込みしてください。'));
   }, []);
 
@@ -73,7 +91,9 @@ export const GuestGate: React.FC<{ children: React.ReactNode }> = ({ children })
     };
   }, [status]);
 
-  if (status === 'ready') return <>{children}</>;
+  const app = user && <SessionContext.Provider value={{ user, setUser }}>{children}</SessionContext.Provider>;
+
+  if (status === 'ready') return <>{app}</>;
 
   const card = (
     <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-2xl p-6 text-center space-y-4">
@@ -114,7 +134,7 @@ export const GuestGate: React.FC<{ children: React.ReactNode }> = ({ children })
   if (hasEnteredApp) {
     return (
       <>
-        {children}
+        {app}
         <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-zinc-900/60 backdrop-blur-xs">{card}</div>
       </>
     );
