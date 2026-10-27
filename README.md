@@ -2,51 +2,46 @@
 
 思いつきを逃さず、断片的な思考を開発・検証できる PRD へと育てる個人向けプロダクト開発ワークスペース。
 
+構成: Vite（React）+ FastAPI（Python）+ Supabase Postgres（`idea_ws` スキーマ、自前のゲストセッション）。
+詳しい方針は [CLAUDE.md](CLAUDE.md)、移行計画は [docs/migration-plan.md](docs/migration-plan.md)。
+（README の全面更新は Phase 6 で行う）
+
 ## セットアップ
 
-前提: Node.js
+前提: Node.js、[uv](https://docs.astral.sh/uv/)、Docker（colima 等）
 
 ```bash
 npm install
-cp .env.example .env   # GEMINI_API_KEY を設定（未設定でも内蔵ジェネレータで動作）
-npm run dev            # http://localhost:3000
+uv sync
+cp .env.example .env                        # ローカル用の値入り。GEMINI_API_KEY は任意
+docker compose up -d                        # ローカル Postgres（開発用 :54322 / テスト用 :54323）
+uv run python -m backend.scripts.db_reset   # 開発用 DB にマイグレーションとサンプルを適用
+npm run dev                                 # http://localhost:3000（FastAPI :8000 と Vite を同時起動）
 ```
 
 | コマンド | 内容 |
 | --- | --- |
-| `npm run dev` / `npm start` | Express + Vite ミドルウェアで起動（`NODE_ENV=production` なら `dist/` を配信） |
+| `npm run dev` | FastAPI と Vite を同時起動（`/api` は Vite が :8000 へ転送） |
 | `npm run build` | フロントエンドを `dist/` にビルド |
-| `npm run lint` | 型チェック |
+| `npm run lint` / `npm test` | 型チェック / vitest |
+| `uv run pytest` | バックエンドのテスト（テスト用 DB を作り直して実行） |
 
-## ディレクトリ構成
+## 2 つのブラウザでデータが混ざらないことの確認
 
-```
-server.ts               Express エントリ（API ルーティング・静的配信）
-server/
-  config.ts             サーバー設定（ポート・Gemini モデル・各種上限値）
-  gemini.ts             Gemini クライアントと JSON 応答のパース
-  prompts.ts            AI へのプロンプト
-  fallbacks.ts          API キー未設定・AI エラー時の内蔵ジェネレータ
-src/
-  config/               定数・定義ファイル
-    app.ts              アプリ全体（表示名・タイミング・ペイン・ショートカット）
-    api.ts              API エンドポイントとリクエスト/レスポンス型（サーバーと共有）
-    prd.ts              PRD 生成モード・詳細度などのラベルと配色（サーバーと共有）
-    storage.ts          localStorage キー・ID プレフィックス
-    seed.ts             初回起動時のサンプルデータ・新規作成時のデフォルト
-    supabaseSchema.ts   Supabase 移行用 SQL
-  services/
-    workspaceRepository.ts  データ永続化（現在は localStorage 実装）
-    apiClient.ts            サーバー API 呼び出し
-  hooks/                共通フック
-  utils/                Markdown レンダラ・メモ表示名ヘルパー
-  components/           UI コンポーネント
-```
+データはブラウザごとのゲストユーザー（Cookie のセッション）に紐づく。次の手順で、別のゲスト同士のデータが混ざらないことを確認できる。
+（自動テストでは `backend/tests/test_workspace_isolation.py` が全 API について同じことを検証している）
 
-## 環境変数
+1. `npm run dev` で起動する。
+2. ブラウザ A（通常ウィンドウ）で http://localhost:3000 を開く。サンプルのプロジェクトが表示される。
+3. ブラウザ A でメモを 1 件作り、「ブラウザ A のメモ」と入力する。ヘッダーの表示が「自動保存完了」になるのを待つ。
+4. ブラウザ B（別のブラウザ、または A のシークレットウィンドウ）で http://localhost:3000 を開く。
+5. ブラウザ B にはサンプルだけが表示され、「ブラウザ A のメモ」が無いことを確認する。
+6. ブラウザ B でメモを作り「ブラウザ B のメモ」と入力する。
+7. ブラウザ A を再読み込みし、「ブラウザ A のメモ」が残っていて「ブラウザ B のメモ」が無いことを確認する。
+8. （任意）DB で 2 人のゲストができていることを確認する:
+   `docker compose exec db psql -U postgres -c "select id, is_guest, created_at from idea_ws.users"`
 
-| 変数 | 既定値 | 説明 |
-| --- | --- | --- |
-| `GEMINI_API_KEY` | なし | 未設定時は内蔵ジェネレータで応答 |
-| `GEMINI_MODEL` | `gemini-3.8-flash` | 使用する Gemini モデル |
-| `PORT` | `3000` | サーバーのポート |
+## 以前のバージョンのデータ
+
+以前のバージョンはデータをブラウザの localStorage に保存していた。そのデータが残っているブラウザで開くと、
+取り込むかどうかを確認するダイアログが表示される。取り込んだプロジェクトの分は localStorage から削除される。

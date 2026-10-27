@@ -1,7 +1,6 @@
 /**
- * クライアントとサーバーで共有する API 定義。
- * サーバー側 (server.ts) からも import されるため、ブラウザ専用 API に依存しないこと。
- * Python 側（backend/app/models/ai.py）とキー名・型を一致させること。
+ * AI・認証 API の定義（Workspace API の型は services/apiWorkspaceRepository.ts）。
+ * Python 側（backend/app/models/*.py）とキー名・型を一致させること。
  */
 import type {
   PrdContradiction,

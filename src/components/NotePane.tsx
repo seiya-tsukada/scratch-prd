@@ -78,6 +78,8 @@ interface NotePaneProps {
   onDeleteNote: (noteId: string) => void;
   onMoveNote: (noteId: string, targetSectionId: string) => void;
   onStructureNote?: (noteId: string) => void;
+  /** 変わると入力中の内容をサーバーの値で読み直す（競合時など） */
+  syncKey?: number;
 }
 
 export const NotePane: React.FC<NotePaneProps> = ({
@@ -93,6 +95,7 @@ export const NotePane: React.FC<NotePaneProps> = ({
   onDeleteNote,
   onMoveNote,
   onStructureNote,
+  syncKey = 0,
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('edit');
   const { copied, copy } = useCopyFeedback();
@@ -104,20 +107,37 @@ export const NotePane: React.FC<NotePaneProps> = ({
   const [localContent, setLocalContent] = useState(note?.content || '');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // デバウンス中の変更（タイトルと本文をまとめて保存する）
+  const pendingRef = useRef<{ noteId: string; updates: Partial<Note> } | null>(null);
+  const onUpdateNoteRef = useRef(onUpdateNote);
+  onUpdateNoteRef.current = onUpdateNote;
 
-  // Sync local state when incoming note changes
+  const flushPending = () => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    saveTimeoutRef.current = null;
+    const pending = pendingRef.current;
+    pendingRef.current = null;
+    if (pending) onUpdateNoteRef.current(pending.noteId, pending.updates);
+  };
+
+  // 別のメモに切り替える前・閉じる前に、デバウンス中の変更を保存する
+  useEffect(() => flushPending, [note?.id]);
+
+  // メモが切り替わったとき、またはサーバーの値で読み直すとき（syncKey）に入力欄を更新する
   useEffect(() => {
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    pendingRef.current = null;
     setLocalTitle(note?.title || '');
     setLocalContent(note?.content || '');
-  }, [note?.id]);
+  }, [note?.id, syncKey]);
 
-  // タイトル・本文の変更はデバウンスして保存（タイマーは共有）
+  // タイトル・本文の変更はデバウンスして保存する
   const scheduleSave = (updates: Partial<Note>) => {
     if (!note) return;
+    const previous = pendingRef.current?.noteId === note.id ? pendingRef.current.updates : {};
+    pendingRef.current = { noteId: note.id, updates: { ...previous, ...updates } };
     if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    saveTimeoutRef.current = setTimeout(() => {
-      onUpdateNote(note.id, updates);
-    }, TIMING.NOTE_AUTOSAVE_DEBOUNCE_MS);
+    saveTimeoutRef.current = setTimeout(flushPending, TIMING.NOTE_AUTOSAVE_DEBOUNCE_MS);
   };
 
   const handleTitleChange = (val: string) => {
@@ -129,13 +149,6 @@ export const NotePane: React.FC<NotePaneProps> = ({
     setLocalContent(val);
     scheduleSave({ content: val });
   };
-
-  // Cleanup timeout
-  useEffect(() => {
-    return () => {
-      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-    };
-  }, []);
 
   const handleCopy = () => {
     if (!note) return;

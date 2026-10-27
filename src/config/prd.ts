@@ -1,6 +1,5 @@
 /**
  * PRD 生成モード・詳細度などの表示定義。
- * サーバー側からも import されるため、React やアイコンに依存しないこと。
  * Tailwind のクラス名はビルド時に静的解析されるため、必ず完全な文字列で記述する。
  */
 import type { PrdDetailLevel, PrdGenerationMode, PrdOpenQuestion, PrdProposal } from '../types';
