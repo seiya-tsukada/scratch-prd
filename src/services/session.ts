@@ -46,3 +46,7 @@ export const changePassword = (currentPassword: string, newPassword: string) =>
 /** アカウント（ゲストならこのブラウザのデータ）を削除する。登録ユーザーはパスワードが必要 */
 export const deleteAccount = (password?: string) =>
   requestJson<void>(API_ENDPOINTS.ACCOUNT, { method: 'DELETE', body: { password } });
+
+/** 初回の案内を終えた（completed）・飛ばした（skipped）ことを記録する */
+export const finishOnboarding = (result: 'completed' | 'skipped') =>
+  requestJson<void>(API_ENDPOINTS.ACCOUNT_ONBOARDING, { method: 'POST', body: { result } });

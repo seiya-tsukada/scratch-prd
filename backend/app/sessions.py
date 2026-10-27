@@ -20,6 +20,7 @@ class SessionUser:
     is_guest: bool
     email: str | None
     display_name: str | None
+    onboarding_done: bool = False
 
     @property
     def account_type(self) -> str:
@@ -54,7 +55,8 @@ async def find_session(conn: Conn, request: Request, response: Response) -> Sess
 
     cur = await conn.execute(
         """
-        select s.id as session_id, u.id as user_id, u.is_guest, u.email::text as email, u.display_name
+        select s.id as session_id, u.id as user_id, u.is_guest, u.email::text as email, u.display_name,
+               u.onboarding_completed_at is not null as onboarding_done
         from idea_ws.sessions s
         join idea_ws.users u on u.id = s.user_id
         where s.token_hash = %s and s.revoked_at is null and s.expires_at > now()

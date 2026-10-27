@@ -6,8 +6,16 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from backend.app import config, security
 from backend.app.db import Db
-from backend.app.models.auth import AccountDelete, AccountUpdate, MeResponse, MeUser, PasswordChange
+from backend.app.models.auth import (
+    AccountDelete,
+    AccountUpdate,
+    MeResponse,
+    MeUser,
+    OnboardingResult,
+    PasswordChange,
+)
 from backend.app.services import accounts
+from backend.app.services.events import record_event
 from backend.app.services.rate_limit import enforce_rate_limit
 from backend.app.sessions import CurrentUser, SessionUser
 
@@ -25,8 +33,21 @@ async def require_password(db: Db, request: Request, user: SessionUser, password
 async def update_account(body: AccountUpdate, db: Db, user: CurrentUser) -> MeResponse:
     await accounts.update_display_name(db, user.user_id, body.display_name)
     return MeResponse(
-        user=MeUser(id=user.user_id, is_guest=user.is_guest, email=user.email, display_name=body.display_name)
+        user=MeUser(
+            id=user.user_id,
+            is_guest=user.is_guest,
+            email=user.email,
+            display_name=body.display_name,
+            onboarding_done=user.onboarding_done,
+        )
     )
+
+
+@router.post("/onboarding", status_code=204)
+async def finish_onboarding(body: OnboardingResult, db: Db, user: CurrentUser) -> None:
+    """初回の案内を終えた（completed）・飛ばした（skipped）ことを記録する。2 回目以降は何もしない"""
+    if await accounts.finish_onboarding(db, user.user_id, body.result):
+        await record_event(db, user.user_id, f"onboarding_{body.result}", session_id=user.session_id)
 
 
 @router.post("/password", status_code=204)

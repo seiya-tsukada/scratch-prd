@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Sparkles, X, AlertCircle, Loader2, Layers, ShieldCheck, Lightbulb, Rocket } from 'lucide-react';
+import { Sparkles, X, AlertCircle, Loader2, Layers, ShieldCheck, Lightbulb, Rocket, ChevronDown } from 'lucide-react';
 import {
   Note,
   Section,
@@ -19,6 +19,7 @@ import {
 } from '../config/prd';
 import { getNoteDisplayTitle } from '../utils/note';
 import { getPrdInputLimitError } from '../utils/aiLimits';
+import { generationStage } from '../utils/generationStage';
 
 const MODE_ICONS: Record<PrdGenerationMode, React.ComponentType<{ className?: string }>> = {
   strict: ShieldCheck,
@@ -65,7 +66,8 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
   const [detailLevel, setDetailLevel] = useState<PrdDetailLevel>(DEFAULT_DETAIL_LEVEL);
   const [targetPrdId, setTargetPrdId] = useState<string>(NEW_PRD_TARGET);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [generationStep, setGenerationStep] = useState<string>('');
+  // モード・詳細度・保存先は推奨値を選んだ状態で折りたたむ
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
 
@@ -81,6 +83,7 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
     setTargetPrdId(targetPrd ? targetPrd.id : NEW_PRD_TARGET);
     setMode(targetPrd?.generationMode || DEFAULT_GENERATION_MODE);
     setDetailLevel(targetPrd?.detailLevel || DEFAULT_DETAIL_LEVEL);
+    setShowAdvanced(false);
     setError(null);
   }, [isOpen]);
 
@@ -114,7 +117,6 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
     setError(null);
     setIsGenerating(true);
     setElapsedTime(0);
-    setGenerationStep('AI仕様書を高速生成中...');
 
     const tickSeconds = TIMING.GENERATION_TIMER_INTERVAL_MS / 1000;
     const timer = setInterval(() => {
@@ -262,6 +264,27 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
             </div>
           </div>
 
+          {/* 詳細設定（モード・詳細度・保存先）。閉じている間は選択中の内容を 1 行で示す */}
+          <button
+            type="button"
+            onClick={() => setShowAdvanced((v) => !v)}
+            aria-expanded={showAdvanced}
+            className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-800 text-xs text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50"
+          >
+            <span>
+              <span className="font-semibold text-zinc-800 dark:text-zinc-200">詳細設定</span>
+              <span className="ml-2">
+                {PRD_MODE_META[mode].cardTitle}・{PRD_DETAIL_LEVEL_LABELS[detailLevel]}・
+                {targetPrdId === NEW_PRD_TARGET
+                  ? '新しいPRD'
+                  : `「${existingPrds.find((p) => p.id === targetPrdId)?.title ?? ''}」を更新`}
+              </span>
+            </span>
+            <ChevronDown className={`w-4 h-4 shrink-0 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
+          </button>
+
+          {showAdvanced && (
+          <>
           {/* 2. Generation Mode Selection */}
           <div>
             <div className="flex items-center gap-2 mb-2">
@@ -353,6 +376,8 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
               </select>
             </div>
           </div>
+          </>
+          )}
         </div>
 
         {/* Modal Footer */}
@@ -361,7 +386,7 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
             {isGenerating ? (
               <span className="flex items-center gap-2 font-medium text-indigo-600 dark:text-indigo-400">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                <span>{generationStep} ({elapsedTime}秒)</span>
+                <span>{generationStage(elapsedTime)} ({elapsedTime}秒)</span>
               </span>
             ) : (
               <span className="flex items-center gap-1.5 text-zinc-500">

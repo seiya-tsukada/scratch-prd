@@ -24,7 +24,13 @@ Turnstile = Annotated[TurnstileVerifier, Depends(get_turnstile_verifier)]
 
 def me_response(user: SessionUser) -> MeResponse:
     return MeResponse(
-        user=MeUser(id=user.user_id, is_guest=user.is_guest, email=user.email, display_name=user.display_name)
+        user=MeUser(
+            id=user.user_id,
+            is_guest=user.is_guest,
+            email=user.email,
+            display_name=user.display_name,
+            onboarding_done=user.onboarding_done,
+        )
     )
 
 
@@ -95,7 +101,15 @@ async def register(
 
     await record_event(db, user.user_id, "signup_completed", {"method": "password"})
     display_name = body.display_name or user.display_name
-    return MeResponse(user=MeUser(id=user.user_id, is_guest=False, email=body.email, display_name=display_name))
+    return MeResponse(
+        user=MeUser(
+            id=user.user_id,
+            is_guest=False,
+            email=body.email,
+            display_name=display_name,
+            onboarding_done=user.onboarding_done,
+        )
+    )
 
 
 @router.post("/login", response_model_exclude_none=True)
@@ -130,7 +144,15 @@ async def login(body: LoginRequest, request: Request, response: Response, db: Db
     if guest is not None and body.guest_data == "merge":
         await record_event(db, creds.user_id, "account_merged")
 
-    return MeResponse(user=MeUser(id=creds.user_id, is_guest=False, email=creds.email, display_name=creds.display_name))
+    return MeResponse(
+        user=MeUser(
+            id=creds.user_id,
+            is_guest=False,
+            email=creds.email,
+            display_name=creds.display_name,
+            onboarding_done=creds.onboarding_done,
+        )
+    )
 
 
 @router.get("/me", response_model_exclude_none=True)

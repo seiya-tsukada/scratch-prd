@@ -40,11 +40,23 @@ EVENT_SCHEMAS: dict[str, dict[str, PropertyRule]] = {
     "signup_completed": {"method": SIGNUP_METHODS},
     "account_merged": {},
     "local_data_imported": {"notes": int},
+    "onboarding_started": {},
+    "onboarding_completed": {},
+    "onboarding_skipped": {},
+    "quick_prd_used": {"structured": bool},
 }
 
 # フロントから送ってよいイベント（それ以外はサーバー側でのみ記録する）
 CLIENT_EVENTS = frozenset(
-    {"app_opened", "prd_copied_for_ai", "prd_downloaded", "signup_prompt_shown", "signup_started"}
+    {
+        "app_opened",
+        "prd_copied_for_ai",
+        "prd_downloaded",
+        "signup_prompt_shown",
+        "signup_started",
+        "onboarding_started",
+        "quick_prd_used",
+    }
 )
 
 

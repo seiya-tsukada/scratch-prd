@@ -65,6 +65,7 @@ def test_register_promotes_same_user_and_keeps_data(
         "isGuest": False,
         "email": "alice@example.com",
         "displayName": "Alice",
+        "onboardingDone": False,
     }
     # セッションは作り直され、古いトークンは使えない
     assert guest_client.cookies[COOKIE] != old_token

@@ -142,10 +142,11 @@
 
 **ブランチ**: `feature/phase7-activation`
 
-- 3 ステップのオンボーディング（スキップ可、表示済みフラグは `user_preferences` 的な列で DB 保存）
-- 「貼るだけ PRD」入口：新規メモ作成 → 既存の PRD 生成を呼ぶ
-- PRD 生成モーダル：推奨値を既定選択、詳細設定を折りたたみ、段階表示
-- イベント追加
+- 初回の案内 = 最初の PRD ができるまでの実際の流れ（殴り書き → 整形 → PRD の 3 ステップ、例文ボタン付き、スキップ可）。新しいゲストはクリック 3 回で PRD を開ける
+- 状態は `users.onboarding_completed_at / onboarding_result`（`completed` / `skipped`）。`POST /api/account/onboarding`、`/api/auth/me` の `onboardingDone`。登録しても引き継がれ、ログイン時はアカウント側の状態を使う
+- 「貼るだけ PRD」（ヘッダー）：同じダイアログで、貼り付け → そのまま（または整形してから）PRD。Inbox にメモを作って既存の PRD 生成を呼ぶ
+- PRD 生成画面：推奨のモード・詳細度を既定選択のまま「詳細設定」に折りたたみ、選択中の内容を 1 行で表示。生成中は経過時間で段階表示
+- 計測：`onboarding_started` / `quick_prd_used`（フロント）、`onboarding_completed` / `onboarding_skipped`（サーバー）
 
 ---
 
