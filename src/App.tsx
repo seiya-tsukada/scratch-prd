@@ -7,6 +7,11 @@ import { PrdGeneratorModal, PrdGenerateParams } from './components/PrdGeneratorM
 import { StructureRoughNoteModal } from './components/StructureRoughNoteModal';
 import { PrdViewerModal } from './components/PrdViewerModal';
 import { LegacyImportDialog } from './components/LegacyImportDialog';
+import { AuthDialog, AuthMode } from './components/AuthDialog';
+import { AccountDialog } from './components/AccountDialog';
+import { SignupPrompt } from './components/SignupPrompt';
+import { useSession } from './components/GuestGate';
+import { isSnoozed, signupPromptStorage, SignupPromptTrigger } from './utils/signupPrompt';
 import { ProjectData, PrdInput, workspaceRepository } from './services/apiWorkspaceRepository';
 import { NoteSaveQueue } from './services/noteSaveQueue';
 import { clearLegacyData, findLegacyProjects, LegacyProjectSummary, removeLegacyProject } from './services/legacyImport';
@@ -19,6 +24,8 @@ import {
   FALLBACK_PROJECT_NAME,
   INBOX_SECTION_KEYWORD,
   QUICK_CAPTURE_SHORTCUT_KEY,
+  QUOTA_UPGRADE_EVENT,
+  SIGNUP_PROMPT,
   TIMING,
   UNTITLED_SHORT_LABEL,
   createEmptyPanes,
@@ -69,6 +76,7 @@ const toPrdInput = (prd: PrdDocument): PrdInput => ({
 });
 
 export default function App() {
+  const { user, setUser } = useSession();
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
@@ -99,6 +107,11 @@ export default function App() {
   // 直前の PRD 生成が内蔵ジェネレータによるものだった場合に、ビューアで知らせる
   const [prdFallback, setPrdFallback] = useState<{ prdId: string; reason: FallbackReason } | null>(null);
   const [legacyProjects, setLegacyProjects] = useState<LegacyProjectSummary[]>([]);
+  const [authMode, setAuthMode] = useState<AuthMode | null>(null);
+  const [isAccountOpen, setIsAccountOpen] = useState(false);
+  const [signupPrompt, setSignupPrompt] = useState<SignupPromptTrigger | null>(null);
+  // 同じきっかけで何度も出さない（このページを開いている間）
+  const shownPromptTriggers = useRef(new Set<SignupPromptTrigger>());
 
   const showError = (e: unknown) => {
     console.error(e);
@@ -456,6 +469,7 @@ export default function App() {
     upsertPrd(savedPrd);
     setPrdFallback(data.usedFallback ? { prdId: savedPrd.id, reason: data.fallbackReason ?? 'ai_error' } : null);
     setActivePrdId(savedPrd.id);
+    if (!existingPrd) offerSignup('first_prd');
   };
 
   const closePrdViewer = () => {
@@ -493,6 +507,43 @@ export default function App() {
   const closePrdGenerator = () => {
     setIsPrdGeneratorOpen(false);
     setGeneratorTargetPrdId(null);
+  };
+
+  // --- 登録の案内（ゲストのみ。閉じたら一定期間は出さない） ---
+  const offerSignup = useCallback(
+    (trigger: SignupPromptTrigger) => {
+      if (!user.isGuest || shownPromptTriggers.current.has(trigger)) return;
+      if (isSnoozed(signupPromptStorage.read())) return;
+      shownPromptTriggers.current.add(trigger);
+      setSignupPrompt(trigger);
+    },
+    [user.isGuest]
+  );
+
+  const dismissSignupPrompt = () => {
+    signupPromptStorage.dismiss();
+    setSignupPrompt(null);
+  };
+
+  useEffect(() => {
+    if (notes.length > SIGNUP_PROMPT.NOTE_COUNT_THRESHOLD) offerSignup('note_count');
+  }, [notes.length, offerSignup]);
+
+  useEffect(() => {
+    const onQuota = () => offerSignup('quota');
+    window.addEventListener(QUOTA_UPGRADE_EVENT, onQuota);
+    return () => window.removeEventListener(QUOTA_UPGRADE_EVENT, onQuota);
+  }, [offerSignup]);
+
+  const openAuth = (mode: AuthMode) => {
+    setSignupPrompt(null);
+    setIsAccountOpen(false);
+    setAuthMode(mode);
+  };
+
+  /** 別のユーザーに切り替わった・セッションが終わったので読み直す（未保存の変更があればブラウザが確認する） */
+  const restartApp = () => {
+    window.location.reload();
   };
 
   // --- Rough note structuring ---
@@ -641,6 +692,9 @@ export default function App() {
         onOpenStructureRoughNote={() => setIsStructureModalOpen(true)}
         onOpenPrdGenerator={() => openPrdGenerator(null)}
         onRetrySave={() => saveQueue.retryAll()}
+        user={user}
+        onOpenAuth={openAuth}
+        onOpenAccount={() => setIsAccountOpen(true)}
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
       />
 
@@ -717,6 +771,33 @@ export default function App() {
 
       {errorBanner}
       {legacyDialog}
+
+      {signupPrompt && !authMode && (
+        <SignupPrompt trigger={signupPrompt} onRegister={() => openAuth('register')} onDismiss={dismissSignupPrompt} />
+      )}
+
+      {authMode && (
+        <AuthDialog
+          initialMode={authMode}
+          isGuest={user.isGuest}
+          onClose={() => setAuthMode(null)}
+          onRegistered={(registered) => {
+            setUser(registered);
+            setAuthMode(null);
+          }}
+          onLoggedIn={restartApp}
+        />
+      )}
+
+      {isAccountOpen && (
+        <AccountDialog
+          user={user}
+          onClose={() => setIsAccountOpen(false)}
+          onUserUpdated={setUser}
+          onSessionEnded={restartApp}
+          onRegister={() => openAuth('register')}
+        />
+      )}
     </div>
   );
 }

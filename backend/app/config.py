@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     cookie_secure: bool = True
     # Vercel 上では true（x-forwarded-for を Vercel が上書きするため信頼できる）
     trust_proxy_headers: bool = False
+    # Vercel Cron が Authorization: Bearer で送る秘密（16 文字以上のランダム文字列）
+    cron_secret: SecretStr | None = None
 
     @property
     def effective_gemini_api_key(self) -> str | None:
@@ -104,6 +106,16 @@ AI_DAILY_QUOTAS: dict[str, dict[AiKind, int]] = {
 # ゲスト作成の IP 単位レート制限
 GUEST_CREATE_RATE_LIMIT = 10
 GUEST_CREATE_RATE_WINDOW_SECONDS = 3600
+
+# メールアドレス + パスワードのログイン（メールアドレスの確認は行わない）
+MAX_EMAIL_CHARS = 254
+MIN_PASSWORD_CHARS = 10
+MAX_PASSWORD_CHARS = 128
+MAX_DISPLAY_NAME_CHARS = 100
+# 総当たり対策（回数, 秒）。キーは IP / メールアドレスの HMAC
+LOGIN_RATE_LIMIT_PER_IP = (10, 15 * 60)
+LOGIN_RATE_LIMIT_PER_EMAIL = (5, 15 * 60)
+REGISTER_RATE_LIMIT_PER_IP = (5, 60 * 60)
 
 TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 TURNSTILE_TIMEOUT_SECONDS = 10

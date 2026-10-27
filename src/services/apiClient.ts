@@ -6,7 +6,7 @@ import {
   StructureRoughNoteRequest,
   StructureRoughNoteResponse,
 } from '../config/api';
-import { SESSION_EXPIRED_EVENT } from '../config/app';
+import { QUOTA_UPGRADE_EVENT, SESSION_EXPIRED_EVENT } from '../config/app';
 
 /** サーバーが返したエラー。code は detail.code、detail はサーバーが返した detail（あれば） */
 export class ApiError extends Error {
@@ -34,6 +34,11 @@ const CODE_MESSAGES: Record<string, string> = {
   rate_limited: '短時間にリクエストが集中しています。しばらく待ってからお試しください。',
   limit_exceeded: '保存できる件数の上限に達しました。不要なデータを削除してからお試しください。',
   conflict: '他の画面で先に更新されていました。',
+  email_taken: 'このメールアドレスは既に登録されています。ログインしてください。',
+  already_registered: 'すでにアカウント登録済みです。',
+  invalid_credentials: 'メールアドレスまたはパスワードが正しくありません。',
+  invalid_password: 'パスワードが正しくありません。',
+  not_registered: 'アカウント登録後に利用できます。',
 };
 
 const QUOTA_KIND_LABELS: Record<QuotaExceededDetail['kind'], string> = {
@@ -42,7 +47,8 @@ const QUOTA_KIND_LABELS: Record<QuotaExceededDetail['kind'], string> = {
 };
 
 const quotaMessage = (detail: QuotaExceededDetail) =>
-  `本日の${QUOTA_KIND_LABELS[detail.kind]}の上限（${detail.limit}回）に達しました。明日またお試しください。`;
+  `本日の${QUOTA_KIND_LABELS[detail.kind]}の上限（${detail.limit}回）に達しました。明日またお試しください。` +
+  (detail.canUpgradeByRegistering ? `アカウント登録すると上限が1日${detail.registeredLimit}回に上がります。` : '');
 
 async function toApiError(response: Response, errorPrefix: string): Promise<ApiError> {
   const body = await response.json().catch(() => null);
@@ -50,6 +56,9 @@ async function toApiError(response: Response, errorPrefix: string): Promise<ApiE
   const code: string | undefined = typeof detail?.code === 'string' ? detail.code : undefined;
 
   if (code === 'quota_exceeded') {
+    if ((detail as QuotaExceededDetail).canUpgradeByRegistering) {
+      window.dispatchEvent(new Event(QUOTA_UPGRADE_EVENT));
+    }
     return new ApiError(quotaMessage(detail as QuotaExceededDetail), response.status, code, detail);
   }
   const message =

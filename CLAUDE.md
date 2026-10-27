@@ -48,9 +48,10 @@ Vercel（同一リポジトリ・同一ドメイン）
 ### ゲストと登録
 
 - 初回アクセスで `POST /api/auth/guest`（Turnstile 必須）→ `users(is_guest=true)` を作成しサンプルを複製。データは最初から DB に保存する。
-- 登録（メールのマジックリンク / Google OAuth + PKCE）は**同じ users 行を昇格**させるのでデータ移行は不要。
-- 既に登録済みの identity でログインした場合は、確認のうえ `POST /api/account/merge` でゲストのデータを統合する。
-- 昇格・ログイン時はセッショントークンを再発行する。
+- 登録は**メールアドレス + パスワード**（Phase 5。メールのマジックリンク・Google OAuth は保留）。**同じ users 行を昇格**させるのでデータ移行は不要。
+- 既存アカウントにログインしたとき、ゲストにデータがあれば確認のうえ統合（merge）か破棄（discard）してからログインする（`POST /api/auth/login` の `guestData`）。
+- 昇格・ログイン時はセッショントークンを再発行する。パスワードは Argon2id のハッシュのみ保存する。
+- メールアドレスの確認・パスワード再設定は未実装（画面で明示している）。
 
 ---
 
@@ -135,6 +136,12 @@ uv run ruff check backend && uv run ruff format --check backend && uv run mypy
 - マイグレーションは `supabase/migrations/`（Supabase CLI 形式）、コンテンツの初期データは `supabase/seed.sql`。本番への適用手順は [docs/supabase-setup.md](docs/supabase-setup.md)。
 - ローカルの `idea_ws_app` のパスワードは `idea_ws_app`（`db_reset` が設定する。本番では手作業で設定）。
 - テーブルを追加するときは、同じマイグレーションで RLS 有効化・`idea_ws_app` への GRANT・`idea_ws_app` 用ポリシーを行う。
+
+アカウント（Phase 5〜）:
+
+- 登録・ログイン・統合は `backend/app/services/accounts.py`、アカウント設定は `routers/account.py`、定期処理は `routers/cron.py`（`CRON_SECRET`）。
+- ログイン系は `rate_limit.enforce_rate_limit`（IP・メールアドレスごと、キーはハッシュ）を通す。失敗の文言でメールアドレスの有無を区別しない。
+- フロントのログイン中ユーザーは `useSession()`（`GuestGate` の context）。別ユーザーに切り替わったときはページを読み直す。
 
 認証・セッション（Phase 3〜）:
 

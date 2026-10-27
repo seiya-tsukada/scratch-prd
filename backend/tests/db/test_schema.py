@@ -141,6 +141,41 @@ def test_deleting_user_cascades_user_data_and_keeps_metrics(app: psycopg.Connect
     )
 
 
+def test_moving_a_project_to_another_user_moves_everything_under_it(app: psycopg.Connection) -> None:
+    """ゲストのデータ統合: projects.user_id の書き換えが配下のテーブルへ cascade する"""
+    guest = create_user(app)
+    owner = create_user(app, is_guest=False, email="owner@example.com")
+    project = create_project(app, guest)
+    section = create_section(app, guest, project)
+    app.execute(
+        "insert into idea_ws.notes (user_id, project_id, section_id, content) values (%s, %s, %s, 'x')",
+        (guest, project, section),
+    )
+    prd = app.execute(
+        "insert into idea_ws.prd_documents (user_id, project_id, title, generation_mode) "
+        "values (%s, %s, 'T', 'suggest') returning id",
+        (guest, project),
+    ).fetchone()
+    assert prd is not None
+    app.execute(
+        "insert into idea_ws.prd_versions "
+        "(user_id, prd_document_id, version_number, title, content, generation_mode, detail_level) "
+        "values (%s, %s, 1, 'T', '', 'suggest', 'standard')",
+        (guest, prd[0]),
+    )
+    app.execute(
+        "insert into idea_ws.workspace_preferences (user_id, project_id, active_pane_id) values (%s, %s, 'pane-0')",
+        (guest, project),
+    )
+
+    app.execute("update idea_ws.projects set user_id = %s where user_id = %s", (owner, guest))
+
+    for table in ["projects", "sections", "notes", "prd_documents", "prd_versions", "workspace_preferences"]:
+        moved = app.execute(f"select count(*) from idea_ws.{table} where user_id = %s", (owner,)).fetchone()
+        left = app.execute(f"select count(*) from idea_ws.{table} where user_id = %s", (guest,)).fetchone()
+        assert (moved, left) == ((1,), (0,)), table
+
+
 def test_updated_at_is_set_on_update(admin: psycopg.Connection) -> None:
     user = create_user(admin)
     row = admin.execute(

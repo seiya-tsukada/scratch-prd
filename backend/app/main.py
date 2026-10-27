@@ -11,7 +11,7 @@ from psycopg import errors as pg_errors
 
 from backend.app import config
 from backend.app.db import create_pool
-from backend.app.routers import ai, auth, workspace
+from backend.app.routers import account, ai, auth, cron, workspace
 from backend.app.services.workspace_repo import ConflictError, LimitExceededError, NotFoundError
 
 
@@ -58,5 +58,7 @@ async def limit_exceeded(request: Request, exc: LimitExceededError) -> JSONRespo
 
 
 app.include_router(auth.router, prefix="/api")
+app.include_router(account.router, prefix="/api")
+app.include_router(cron.router, prefix="/api")
 app.include_router(ai.router, prefix="/api")
 app.include_router(workspace.router, prefix="/api")

@@ -14,8 +14,12 @@ import {
   ChevronDown,
   Edit2,
   Wand2,
+  ShieldCheck,
+  UserCircle2,
 } from 'lucide-react';
 import { Project, PaneCount, SaveStatus } from '../types';
+import type { SessionUser } from '../config/api';
+import type { AuthMode } from './AuthDialog';
 
 const ThreeColumnsIcon = () => (
   <div className="flex gap-0.5 w-3.5 h-3.5 items-center justify-center">
@@ -74,6 +78,9 @@ interface HeaderProps {
   onOpenPrdGenerator: () => void;
   /** 保存に失敗したメモをもう一度保存する */
   onRetrySave: () => void;
+  user: SessionUser;
+  onOpenAuth: (mode: AuthMode) => void;
+  onOpenAccount: () => void;
   onToggleSidebar: () => void;
 }
 
@@ -92,6 +99,9 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenStructureRoughNote,
   onOpenPrdGenerator,
   onRetrySave,
+  user,
+  onOpenAuth,
+  onOpenAccount,
   onToggleSidebar,
 }) => {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
@@ -267,11 +277,11 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           type="button"
           onClick={onOpenStructureRoughNote}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-amber-900 dark:text-amber-200 bg-amber-100/90 dark:bg-amber-950/70 hover:bg-amber-200 dark:hover:bg-amber-900/80 border border-amber-300/80 dark:border-amber-800/80 shadow-2xs active:scale-[0.98] transition-all cursor-pointer"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap text-amber-900 dark:text-amber-200 bg-amber-100/90 dark:bg-amber-950/70 hover:bg-amber-200 dark:hover:bg-amber-900/80 border border-amber-300/80 dark:border-amber-800/80 shadow-2xs active:scale-[0.98] transition-all cursor-pointer"
           title="殴り書きのメモをPRD形式の構造化テキストに即時整形"
         >
           <Wand2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-          <span className="hidden sm:inline">殴り書きを</span>
+          <span className="hidden xl:inline">殴り書きを</span>
           <span>構造化</span>
         </button>
 
@@ -279,7 +289,7 @@ export const Header: React.FC<HeaderProps> = ({
         <button
           type="button"
           onClick={onOpenPrdGenerator}
-          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-gradient-to-r from-indigo-600 via-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-xs shadow-indigo-500/20 active:scale-[0.98] transition-all cursor-pointer"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap text-white bg-gradient-to-r from-indigo-600 via-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-xs shadow-indigo-500/20 active:scale-[0.98] transition-all cursor-pointer"
           title="複数メモを横断して本格的なPRD仕様書を高速生成"
         >
           <Sparkles className="w-3.5 h-3.5" />
@@ -289,6 +299,38 @@ export const Header: React.FC<HeaderProps> = ({
               {selectedNotesCount}
             </span>
           )}
+        </button>
+
+        {/* アカウント: ゲストには登録の導線を常に置く（押し付けない） */}
+        {user.isGuest ? (
+          <>
+            <button
+              type="button"
+              onClick={() => onOpenAuth('register')}
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 hover:bg-indigo-50 dark:hover:bg-indigo-950/40"
+              title="登録してデータを保護（ゲストのままだと Cookie を削除したときにデータへ戻れません）"
+            >
+              <ShieldCheck className="w-3.5 h-3.5" />
+              <span className="hidden xl:inline">登録してデータを保護</span>
+              <span className="xl:hidden">登録</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onOpenAuth('login')}
+              className="hidden md:block px-2 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+            >
+              ログイン
+            </button>
+          </>
+        ) : null}
+        <button
+          type="button"
+          onClick={onOpenAccount}
+          className="flex items-center gap-1.5 p-1.5 rounded-lg text-xs text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 max-w-[160px]"
+          title={user.isGuest ? 'ゲストとして利用中' : 'アカウント設定'}
+        >
+          <UserCircle2 className="w-4 h-4 shrink-0" />
+          {!user.isGuest && <span className="hidden lg:inline truncate">{user.displayName || user.email}</span>}
         </button>
       </div>
     </header>
