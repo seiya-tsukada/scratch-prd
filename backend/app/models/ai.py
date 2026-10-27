@@ -47,9 +47,11 @@ class PrdOpenQuestion(CamelModel):
 
 
 class PrdContradiction(CamelModel):
+    """メモ同士の食い違い。notes_involved は関係するメモの ID"""
+
     id: str
     issue: str
-    notes_involved: list[str] = []
+    notes_involved: list[str]
 
 
 # ---------------------------------------------------------------- 殴り書きの整形
@@ -90,12 +92,44 @@ class PrdNoteInput(CamelModel):
     section_name: str | None = Field(default=None, max_length=config.MAX_TITLE_CHARS)
 
 
+PreviousItem = Field(max_length=config.MAX_PREVIOUS_ITEM_CHARS)
+
+
+class PreviousOpenQuestion(CamelModel):
+    question: str = PreviousItem
+    context: str = Field(default="", max_length=config.MAX_PREVIOUS_ITEM_CHARS)
+
+
+class PreviousDecision(CamelModel):
+    """未決事項への回答（確定した事実として扱う）"""
+
+    question: str = PreviousItem
+    answer: str = PreviousItem
+
+
+class PreviousPrd(CamelModel):
+    """再生成時に渡す前回の PRD の要約。本文を切り詰めて渡す代わりに、構成と要点を渡す"""
+
+    title: str = Field(default="", max_length=config.MAX_TITLE_CHARS)
+    headings: list[str] = Field(default=[], max_length=config.MAX_PREVIOUS_ITEMS)
+    facts: list[str] = Field(default=[], max_length=config.MAX_PREVIOUS_ITEMS)
+    open_questions: list[PreviousOpenQuestion] = Field(default=[], max_length=config.MAX_PREVIOUS_ITEMS)
+    decisions: list[PreviousDecision] = Field(default=[], max_length=config.MAX_PREVIOUS_ITEMS)
+
+    @field_validator("headings", "facts")
+    @classmethod
+    def items_within_limit(cls, values: list[str]) -> list[str]:
+        if any(len(v) > config.MAX_PREVIOUS_ITEM_CHARS for v in values):
+            raise ValueError(f"Each item must be at most {config.MAX_PREVIOUS_ITEM_CHARS} characters")
+        return values
+
+
 class GeneratePrdRequest(CamelModel):
     project_name: str = Field(default="", max_length=config.MAX_TITLE_CHARS)
     mode: PrdGenerationMode | None = DEFAULT_GENERATION_MODE
     detail_level: PrdDetailLevel | None = DEFAULT_DETAIL_LEVEL
     notes: list[PrdNoteInput] = Field(min_length=1, max_length=config.MAX_NOTES)
-    existing_prd: str | None = Field(default=None, max_length=config.MAX_EXISTING_PRD_CHARS)
+    previous_prd: PreviousPrd | None = None
 
     @model_validator(mode="after")
     def total_chars_within_limit(self) -> GeneratePrdRequest:

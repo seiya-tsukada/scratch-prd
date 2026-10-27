@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   FileText,
   Copy,
@@ -32,6 +32,14 @@ import {
 import { FallbackReason } from '../config/api';
 import { FallbackNotice } from './FallbackNotice';
 import { track } from '../services/analytics';
+import { diffPrd, findDecisionNote, decisionAnswer, answeredDecisions } from '../utils/prdLoop';
+import {
+  ContradictionBanner,
+  ContradictionList,
+  OpenQuestionAnswer,
+  RegenerateWithAnswers,
+  VersionDiff,
+} from './PrdLoopPanels';
 
 type ViewerTab = 'preview' | 'inspector' | 'sources' | 'history';
 
@@ -51,6 +59,10 @@ interface PrdViewerModalProps {
   onDeletePrd: (prdId: string) => void;
   onRegenerate: (prdId: string) => void;
   onOpenNoteInPane: (noteId: string) => void;
+  /** 未決事項への回答を「決定事項」メモとして保存する */
+  onAnswerQuestion: (question: string, answer: string) => Promise<void>;
+  /** 回答を反映して新しい版を作る */
+  onRegenerateWithAnswers: (prdId: string) => Promise<void>;
 }
 
 export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
@@ -62,6 +74,8 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
   onDeletePrd,
   onRegenerate,
   onOpenNoteInPane,
+  onAnswerQuestion,
+  onRegenerateWithAnswers,
 }) => {
   const [activeTab, setActiveTab] = useState<ViewerTab>('preview');
   const [isEditingMarkdown, setIsEditingMarkdown] = useState(false);
@@ -69,8 +83,30 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
   const { copied: copiedMd, copy: copyMarkdown } = useCopyFeedback();
   const { copied: copiedAiPrompt, copy: copyAiPrompt } = useCopyFeedback();
 
+  // 回答を反映した再生成などで新しい版になったら、表示中の本文を読み直す
+  useEffect(() => {
+    setEditableContent(prd.content);
+    setIsEditingMarkdown(false);
+  }, [prd.id, prd.version]);
+
   // Source notes
   const sourceNotes = notes.filter((n) => prd.sourceNoteIds?.includes(n.id));
+  const contradictions = prd.contradictions ?? [];
+  const answeredCount = answeredDecisions(prd, notes).length;
+
+  // 矛盾の一覧を見たことを一度だけ記録する
+  const contradictionViewTracked = useRef(false);
+  useEffect(() => {
+    if (activeTab === 'inspector' && contradictions.length > 0 && !contradictionViewTracked.current) {
+      contradictionViewTracked.current = true;
+      track({ name: 'contradiction_viewed', properties: { count: contradictions.length } });
+    }
+  }, [activeTab, contradictions.length]);
+
+  const showContradictions = () => {
+    setActiveTab('inspector');
+    setTimeout(() => document.getElementById('prd-contradictions')?.scrollIntoView({ behavior: 'smooth' }), 0);
+  };
 
   // Handle saving direct markdown edits
   const handleSaveMarkdownEdit = () => {
@@ -295,9 +331,14 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
                   />
                 </div>
               ) : (
-                <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 sm:p-8 border border-zinc-200 dark:border-zinc-800 shadow-xs">
-                  <MarkdownRenderer content={editableContent} />
-                </div>
+                <>
+                  {contradictions.length > 0 && (
+                    <ContradictionBanner count={contradictions.length} onShow={showContradictions} />
+                  )}
+                  <div className="bg-white dark:bg-zinc-900 rounded-xl p-6 sm:p-8 border border-zinc-200 dark:border-zinc-800 shadow-xs">
+                    <MarkdownRenderer content={editableContent} />
+                  </div>
+                </>
               )}
             </div>
           )}
@@ -409,6 +450,10 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
                 </div>
               </div>
 
+              {contradictions.length > 0 && (
+                <ContradictionList contradictions={contradictions} notes={notes} onOpenNote={onOpenNoteInPane} />
+              )}
+
               {/* OPEN QUESTIONS Section */}
               <div>
                 <div className="flex items-center gap-2 mb-3">
@@ -450,9 +495,24 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
                       <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
                         {oq.context}
                       </p>
+                      <OpenQuestionAnswer
+                        savedAnswer={(() => {
+                          const note = findDecisionNote(notes, oq.question);
+                          return note ? decisionAnswer(note) : null;
+                        })()}
+                        onSave={(answer) => onAnswerQuestion(oq.question, answer)}
+                      />
                     </div>
                   ))}
                 </div>
+                {(prd.openQuestions?.length ?? 0) > 0 && (
+                  <div className="mt-3">
+                    <RegenerateWithAnswers
+                      answeredCount={answeredCount}
+                      onRegenerate={() => onRegenerateWithAnswers(prd.id)}
+                    />
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -527,6 +587,9 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
                 <p className="text-xs text-zinc-600 dark:text-zinc-400 mt-1">
                   現在の最新版仕様書です。
                 </p>
+                {prd.versions && prd.versions.length > 0 && (
+                  <VersionDiff diff={diffPrd(prd.versions[0], prd)} fromVersion={prd.versions[0].versionNumber} />
+                )}
               </div>
 
               {/* Past Versions */}
@@ -546,6 +609,13 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
                       </div>
                       <span className="text-zinc-400 text-[11px]">{new Date(ver.createdAt).toLocaleString(DATE_LOCALE)}</span>
                     </div>
+
+                    {prd.versions?.[idx + 1] && (
+                      <VersionDiff
+                        diff={diffPrd(prd.versions[idx + 1], ver)}
+                        fromVersion={prd.versions[idx + 1].versionNumber}
+                      />
+                    )}
 
                     <div className="flex items-center justify-between pt-2 border-t border-zinc-100 dark:border-zinc-800">
                       <span className="text-[11px] text-zinc-500">

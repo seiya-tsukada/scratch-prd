@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from backend.app.config import EXISTING_PRD_CONTEXT_MAX_CHARS
 from backend.app.models.ai import GeneratePrdRequest, PrdNoteInput, StructureRoughNoteRequest
 from backend.app.services.prompts import build_generate_prd_prompt, build_structure_rough_note_prompt
 
@@ -31,11 +30,44 @@ def test_generate_prd_prompt_defaults_to_suggest_and_standard() -> None:
     assert "Detail: 実践的で明確な標準PRD" in prompt
 
 
-def test_generate_prd_prompt_truncates_existing_prd() -> None:
-    existing_prd = "x" * (EXISTING_PRD_CONTEXT_MAX_CHARS + 50)
-    prompt = build_generate_prd_prompt(base_request(existing_prd=existing_prd))
-    assert f"Previous PRD Reference:\n{'x' * EXISTING_PRD_CONTEXT_MAX_CHARS}\n" in prompt
-    assert "x" * (EXISTING_PRD_CONTEXT_MAX_CHARS + 1) not in prompt
+def test_generate_prd_prompt_explains_contradictions_with_note_ids() -> None:
+    prompt = build_generate_prd_prompt(base_request())
+    assert "Contradictions:" in prompt
+    assert '"notesInvolved": the exact note IDs' in prompt
+    assert '"notesInvolved": ["note-id", "note-id"]' in prompt  # 出力例
+    assert "If there is no disagreement, return an empty array" in prompt
+
+
+def test_generate_prd_prompt_without_previous_prd_has_no_regeneration_block() -> None:
+    assert "This is a regeneration" not in build_generate_prd_prompt(base_request())
+
+
+def test_generate_prd_prompt_summarizes_previous_prd_without_truncation() -> None:
+    long_fact = "長い事実" * 200  # 旧実装の 1000 文字切り詰めを超える
+    prompt = build_generate_prd_prompt(
+        base_request(
+            previous_prd={
+                "title": "前回のPRD",
+                "headings": ["1. 概要", "2. 機能要件"],
+                "facts": [long_fact],
+                "openQuestions": [{"question": "対象 OS は？", "context": "iOS のみか"}, {"question": "料金は？"}],
+                "decisions": [{"question": "対象 OS は？", "answer": "まずは iOS のみ"}],
+            }
+        )
+    )
+    assert "This is a regeneration of an existing PRD titled「前回のPRD」" in prompt
+    assert "- 1. 概要\n- 2. 機能要件" in prompt
+    assert f"- {long_fact}" in prompt
+    assert "- 対象 OS は？（iOS のみか）\n- 料金は？" in prompt
+    assert "- Q: 対象 OS は？ → A: まずは iOS のみ" in prompt
+    assert "Treat every decision as a confirmed fact" in prompt
+    assert "Remove open questions that a decision answers" in prompt
+
+
+def test_previous_prd_empty_lists_are_marked() -> None:
+    prompt = build_generate_prd_prompt(base_request(previous_prd={"title": ""}))
+    assert "This is a regeneration of an existing PRD. Previous PRD summary:" in prompt
+    assert prompt.count("- (なし)") == 4
 
 
 def test_structure_prompt_uses_defaults() -> None:

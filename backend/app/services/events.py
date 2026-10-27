@@ -44,6 +44,9 @@ EVENT_SCHEMAS: dict[str, dict[str, PropertyRule]] = {
     "onboarding_completed": {},
     "onboarding_skipped": {},
     "quick_prd_used": {"structured": bool},
+    "open_question_answered": {},
+    "prd_regenerated_with_answers": {"answers": int},
+    "contradiction_viewed": {"count": int},
 }
 
 # フロントから送ってよいイベント（それ以外はサーバー側でのみ記録する）
@@ -56,6 +59,9 @@ CLIENT_EVENTS = frozenset(
         "signup_started",
         "onboarding_started",
         "quick_prd_used",
+        "open_question_answered",
+        "prd_regenerated_with_answers",
+        "contradiction_viewed",
     }
 )
 

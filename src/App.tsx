@@ -13,6 +13,14 @@ import { SignupPrompt } from './components/SignupPrompt';
 import { QuickPrdDialog, QuickPrdMode } from './components/QuickPrdDialog';
 import { finishOnboarding } from './services/session';
 import { shouldShowOnboarding } from './utils/onboarding';
+import {
+  DECISION_SECTION_NAME,
+  answeredDecisions,
+  buildPreviousPrd,
+  decisionContent,
+  decisionTitle,
+  findDecisionNote,
+} from './utils/prdLoop';
 import { useSession } from './components/GuestGate';
 import { isSnoozed, signupPromptStorage, SignupPromptTrigger } from './utils/signupPrompt';
 import { track } from './services/analytics';
@@ -439,7 +447,7 @@ export default function App() {
     if (!currentProject) return;
     const existingPrd = params.targetPrdId ? prds.find((p) => p.id === params.targetPrdId) : undefined;
 
-    // 本文以外（タイトル・名前・既存PRD）は文脈として渡すだけなので、上限を超える分は切り詰める
+    // 本文以外（タイトル・名前）は文脈として渡すだけなので、上限を超える分は切り詰める
     const clipTitle = (text: string | undefined) => text?.slice(0, AI_INPUT_LIMITS.MAX_TITLE_CHARS);
     const data = await generatePrd({
       projectName: clipTitle(currentProject.name) ?? '',
@@ -451,7 +459,8 @@ export default function App() {
         content: n.content,
         sectionName: clipTitle(sections.find((s) => s.id === n.sectionId)?.name),
       })),
-      existingPrd: existingPrd?.content.slice(0, AI_INPUT_LIMITS.MAX_EXISTING_PRD_CHARS),
+      // 再生成では本文ではなく、前回の構成・事実・未決事項と、未決事項への回答（決定事項）を渡す
+      previousPrd: existingPrd ? buildPreviousPrd(existingPrd, answeredDecisions(existingPrd, notes)) : undefined,
     });
 
     const title =
@@ -476,6 +485,44 @@ export default function App() {
     setPrdFallback(data.usedFallback ? { prdId: savedPrd.id, reason: data.fallbackReason ?? 'ai_error' } : null);
     setActivePrdId(savedPrd.id);
     if (!existingPrd) offerSignup('first_prd');
+  };
+
+  // --- 未決事項への回答（「決定事項」セクションのメモ）と、回答を反映した再生成 ---
+  const ensureDecisionSection = async (projectId: string): Promise<Section> => {
+    const existing = sections.find((s) => s.name === DECISION_SECTION_NAME);
+    if (existing) return existing;
+    const created = await workspaceRepository.createSection(projectId, DECISION_SECTION_NAME);
+    setSections((prev) => [...prev, created]);
+    return created;
+  };
+
+  const handleAnswerQuestion = async (question: string, answer: string) => {
+    if (!currentProject) return;
+    const content = decisionContent(question, answer);
+    const existing = findDecisionNote(notes, question);
+    if (existing) {
+      handleUpdateNote(existing.id, { content });
+      // ペインで開いていれば入力欄も読み直す
+      setNoteRevisions((prev) => ({ ...prev, [existing.id]: (prev[existing.id] ?? 0) + 1 }));
+    } else {
+      const section = await ensureDecisionSection(currentProject.id);
+      addNote(await workspaceRepository.createNote(currentProject.id, section.id, decisionTitle(question), content));
+    }
+    track({ name: 'open_question_answered' });
+  };
+
+  const handleRegenerateWithAnswers = async (prdId: string) => {
+    const prd = prds.find((p) => p.id === prdId);
+    if (!prd) return;
+    const decisions = answeredDecisions(prd, notes);
+    const decisionNoteIds = new Set(decisions.map((d) => d.note.id));
+    const sourceNotes = notes.filter((n) => prd.sourceNoteIds?.includes(n.id) || decisionNoteIds.has(n.id));
+    await generatePrdFromNotes(sourceNotes, {
+      mode: prd.generationMode,
+      detailLevel: prd.detailLevel,
+      targetPrdId: prd.id,
+    });
+    track({ name: 'prd_regenerated_with_answers', properties: { answers: decisions.length } });
   };
 
   const handleGeneratePrd = (params: PrdGenerateParams) =>
@@ -826,6 +873,8 @@ export default function App() {
           onDeletePrd={handleDeletePrd}
           onRegenerate={openPrdGenerator}
           onOpenNoteInPane={handleOpenNoteInActivePane}
+          onAnswerQuestion={handleAnswerQuestion}
+          onRegenerateWithAnswers={handleRegenerateWithAnswers}
         />
       )}
 
