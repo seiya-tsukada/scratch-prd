@@ -106,3 +106,11 @@ def guest_client(client: TestClient) -> TestClient:
     """ゲストとしてログイン済みのクライアント"""
     login_guest(client)
     return client
+
+
+@pytest.fixture
+def other_guest_client(client: TestClient) -> Iterator[TestClient]:
+    """別のゲストとしてログイン済みのクライアント（Cookie は guest_client と別）"""
+    with TestClient(app, headers={"Origin": TEST_ORIGIN}) as other:
+        login_guest(other)
+        yield other
