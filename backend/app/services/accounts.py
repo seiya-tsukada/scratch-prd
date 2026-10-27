@@ -40,6 +40,7 @@ class Credentials:
     email: str
     display_name: str | None
     password_hash: str
+    onboarding_done: bool
 
 
 async def register_guest(conn: Conn, guest_id: UUID, email: str, password: str, display_name: str | None) -> None:
@@ -76,7 +77,8 @@ async def register_guest(conn: Conn, guest_id: UUID, email: str, password: str, 
 async def find_credentials(conn: Conn, email: str) -> Credentials | None:
     cur = await conn.execute(
         """
-        select u.id as user_id, u.email::text as email, u.display_name, pc.password_hash
+        select u.id as user_id, u.email::text as email, u.display_name, pc.password_hash,
+               u.onboarding_completed_at is not null as onboarding_done
         from idea_ws.users u
         join idea_ws.password_credentials pc on pc.user_id = u.id
         where u.email = %s and not u.is_guest
@@ -144,6 +146,19 @@ async def resolve_guest(conn: Conn, guest_id: UUID, target_id: UUID, action: Lit
         await conn.execute("update idea_ws.events set user_id = %s where user_id = %s", (target_id, guest_id))
         await conn.execute("update idea_ws.ai_generations set user_id = %s where user_id = %s", (target_id, guest_id))
     await conn.execute("delete from idea_ws.users where id = %s and is_guest", (guest_id,))
+
+
+async def finish_onboarding(conn: Conn, user_id: UUID, result: str) -> bool:
+    """初回の案内を終えた（completed / skipped）ことを記録する。既に記録済みなら何もせず False"""
+    cur = await conn.execute(
+        """
+        update idea_ws.users set onboarding_completed_at = now(), onboarding_result = %s
+        where id = %s and onboarding_completed_at is null
+        returning id
+        """,
+        (result, user_id),
+    )
+    return await cur.fetchone() is not None
 
 
 async def update_display_name(conn: Conn, user_id: UUID, display_name: str | None) -> None:

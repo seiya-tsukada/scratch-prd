@@ -126,7 +126,7 @@ def test_me_requires_session(client: TestClient) -> None:
 
 def test_me_returns_current_user(client: TestClient) -> None:
     user = login_guest(client)
-    assert client.get("/api/auth/me").json() == {"user": {"id": user["id"], "isGuest": True}}
+    assert client.get("/api/auth/me").json() == {"user": {"id": user["id"], "isGuest": True, "onboardingDone": False}}
 
 
 def test_unknown_token_is_rejected(client: TestClient) -> None:

@@ -74,6 +74,10 @@ class PasswordChange(CamelModel):
     _new_password = field_validator("new_password")(checked_password)
 
 
+class OnboardingResult(CamelModel):
+    result: Literal["completed", "skipped"]
+
+
 class AccountDelete(CamelModel):
     """正規ユーザーはパスワードの再入力が必須。ゲストは不要"""
 
@@ -85,6 +89,7 @@ class MeUser(CamelModel):
     is_guest: bool
     email: str | None = None
     display_name: str | None = None
+    onboarding_done: bool = False
 
 
 class MeResponse(CamelModel):

@@ -16,6 +16,7 @@ import {
   Wand2,
   ShieldCheck,
   UserCircle2,
+  ClipboardPaste,
 } from 'lucide-react';
 import { Project, PaneCount, SaveStatus } from '../types';
 import type { SessionUser } from '../config/api';
@@ -81,6 +82,8 @@ interface HeaderProps {
   user: SessionUser;
   onOpenAuth: (mode: AuthMode) => void;
   onOpenAccount: () => void;
+  /** 貼るだけ PRD */
+  onOpenQuickPrd: () => void;
   onToggleSidebar: () => void;
 }
 
@@ -102,6 +105,7 @@ export const Header: React.FC<HeaderProps> = ({
   user,
   onOpenAuth,
   onOpenAccount,
+  onOpenQuickPrd,
   onToggleSidebar,
 }) => {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
@@ -272,6 +276,17 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           ))}
         </div>
+
+        {/* 貼るだけ PRD: ワークスペースを知らなくても、貼り付けるだけで PRD を作れる入口 */}
+        <button
+          type="button"
+          onClick={onOpenQuickPrd}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 border border-indigo-200 dark:border-indigo-800"
+          title="メモを貼り付けるだけで PRD を作る"
+        >
+          <ClipboardPaste className="w-3.5 h-3.5" />
+          <span>貼るだけPRD</span>
+        </button>
 
         {/* Action 1: 殴り書きをPRD構造化テキストに修正 */}
         <button

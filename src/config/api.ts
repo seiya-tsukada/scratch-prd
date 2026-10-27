@@ -47,6 +47,7 @@ export const API_ENDPOINTS = {
   AUTH_LOGIN: '/api/auth/login',
   ACCOUNT: '/api/account',
   ACCOUNT_PASSWORD: '/api/account/password',
+  ACCOUNT_ONBOARDING: '/api/account/onboarding',
 } as const;
 
 /** パスワードの条件（backend/app/config.py と同じ） */
@@ -58,6 +59,8 @@ export interface SessionUser {
   isGuest: boolean;
   email?: string;
   displayName?: string;
+  /** 初回の案内を終えた（または飛ばした） */
+  onboardingDone?: boolean;
 }
 
 export interface MeResponse {
