@@ -68,3 +68,48 @@ def test_frontend_serving_keeps_api_routes_first(tmp_path: Path) -> None:
     api_miss = client.get("/api/does-not-exist", headers={"accept": "application/json"})
     assert api_miss.status_code == 404
     assert "spa" not in api_miss.text
+
+
+PRODUCTION_ENV = {
+    "VERCEL_ENV": "production",
+    "DATABASE_URL": "postgresql://idea_ws_app.abcdef:secret@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres",
+    "SESSION_TOKEN_PEPPER": "p" * config.MIN_PRODUCTION_SECRET_CHARS,
+    "TURNSTILE_SECRET_KEY": "0x4AAAAAAAproductionsecret",
+    "COOKIE_SECURE": "true",
+    "TRUST_PROXY_HEADERS": "true",
+    "CRON_SECRET": "c" * 16,
+}
+
+
+def test_production_settings_are_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name, value in PRODUCTION_ENV.items():
+        monkeypatch.setenv(name, value)
+    settings = config.Settings()  # type: ignore[call-arg]
+    assert settings.vercel_env == "production"
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("DATABASE_URL", "postgresql://idea_ws_app:idea_ws_app@localhost:54322/postgres"),
+        ("DATABASE_URL", "postgresql://idea_ws_app:idea_ws_app@db:5432/postgres"),
+        ("SESSION_TOKEN_PEPPER", "local-dev-pepper-change-me"),
+        ("TURNSTILE_SECRET_KEY", "1x0000000000000000000000000000000AA"),
+        ("TURNSTILE_SECRET_KEY", ""),
+        ("COOKIE_SECURE", "false"),
+        ("TRUST_PROXY_HEADERS", "false"),
+        ("CRON_SECRET", ""),
+    ],
+)
+def test_local_settings_are_rejected_in_production(monkeypatch: pytest.MonkeyPatch, name: str, value: str) -> None:
+    for key, default in PRODUCTION_ENV.items():
+        monkeypatch.setenv(key, default)
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError, match="本番環境の設定に問題があります"):
+        config.Settings()  # type: ignore[call-arg]
+
+
+def test_local_settings_are_allowed_outside_production(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    monkeypatch.setenv("COOKIE_SECURE", "false")
+    config.Settings()  # type: ignore[call-arg]

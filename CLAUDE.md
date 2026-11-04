@@ -115,11 +115,24 @@ pyproject.toml           Python 依存（uv で管理）
 
 前提: Node.js、[uv](https://docs.astral.sh/uv/)（Python 3.12 を uv で用意する。システムの Python は使わない）、Docker（colima 等）。
 
+docker compose だけで起動する場合（`docker/*.Dockerfile` はローカル専用。Vercel では使わない）:
+
+```bash
+cp .env.example .env && docker compose up --build   # db → migrate → api(:8000) → web(:3000)
+npm run docker:db-reset                             # マイグレーション追加後など、開発用 DB を作り直す
+```
+
+- `migrate` は `db_reset --if-empty`。idea_ws が無ければ作成、最新なら何もしない、古ければ停止する（データを勝手に消さない）。
+- コンテナ内の接続先・Cookie・Origin は `docker-compose.yml` の `api.environment` で固定している（`.env` より優先）。ポートは `.env` の `DB_PORT` などで変える。
+- 通知（メール送信など）はローカルでは再現しない。通知を実装するときも、ローカルでは送信せずログに出すだけにする。
+
+ホストで動かす場合:
+
 ```bash
 npm install
 uv sync                                     # Python 依存
 cp .env.example .env                        # ローカル用の値入り。GEMINI_API_KEY は任意（未設定なら内蔵ジェネレータ）
-docker compose up -d && uv run python -m backend.scripts.db_reset
+docker compose up -d db db-test && uv run python -m backend.scripts.db_reset
 npm run dev                                 # FastAPI（:8000）と Vite（:3000、/api を :8000 へ proxy）を同時起動
 npm run dev:api / npm run dev:web           # 個別に起動する場合
 npm run lint                                # tsc --noEmit
@@ -129,7 +142,7 @@ npm test                                    # vitest
 DB（Phase 1〜）:
 
 ```bash
-docker compose up -d                        # db（開発用 :54322）と db-test（pytest 用 :54323, tmpfs）
+docker compose up -d db db-test             # db（開発用 :54322）と db-test（pytest 用 :54323, tmpfs）
 uv run python -m backend.scripts.db_reset   # 開発用 DB の idea_ws を作り直す（マイグレーション + seed）
 uv run pytest                               # db-test を作り直してテスト
 uv run ruff check backend && uv run ruff format --check backend && uv run mypy
@@ -165,6 +178,7 @@ Workspace API（Phase 4a〜）:
 - イベントは `backend/app/services/events.py` のホワイトリスト（`EVENT_SCHEMAS`）に追加してから使う。API で起きる出来事はサーバー側で `record_event`、画面上の操作だけ `src/services/analytics.ts` の `track`（`CLIENT_EVENTS`）。properties に個人情報・メモ本文を入れない。
 - 本番では FastAPI が `dist/` も配信する（`app.frontend`）。セキュリティヘッダー（CSP など）は `main.py`。外部のスクリプト・画像を足すときは CSP も直す。
 - 環境変数を足したら `docs/deploy.md` の表と `.env.example` を更新する。
+- `VERCEL_ENV=production` では `config.Settings` がローカル用の値（localhost の DB・テスト用 Turnstile キー・短い pepper・`COOKIE_SECURE=false` など）を拒否して起動しない。`check:bundle` も本番ビルドにテスト用サイトキーがあれば失敗する。
 - 初回の案内と「貼るだけ PRD」は `QuickPrdDialog` を共有する（Phase 7）。PRD 生成は `App.tsx` の `generatePrdFromNotes` に集約している。
 - 再生成では PRD 本文を AI に渡さず、`src/utils/prdLoop.ts` の `buildPreviousPrd` で作った要約（`previousPrd`）を渡す。未決事項への回答は「決定事項」セクションのメモで、タイトルの形式（`decisionTitle`）で回答済みを判定している（Phase 8）。サーバー側の秘密は `scripts/check-bundle-secrets.mjs` の `SERVER_ONLY_ENV` にも足す。
 

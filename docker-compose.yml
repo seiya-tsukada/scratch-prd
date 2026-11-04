@@ -1,6 +1,16 @@
-# ローカル開発・テスト用の Postgres。Supabase と同じイメージ（anon / authenticated などのロールが存在する）
-#   db      … 開発用（データはボリュームに保持）
+# ローカル開発用。本番（Vercel + Supabase）では使わない
+#   docker compose up --build   … db・マイグレーション・API・画面をまとめて起動（http://localhost:3000）
+#   docker compose up -d db db-test … DB だけ起動し、API・画面はホストで npm run dev（従来の方法）
+#
+#   db      … 開発用 Postgres（データはボリュームに保持）。Supabase と同じイメージ（anon / authenticated などのロールが存在する）
 #   db-test … pytest 用（毎回作り直すため tmpfs）
+#   migrate … idea_ws が無いときだけマイグレーションと seed を適用（作り直すときは README の db_reset）
+#   api     … FastAPI（:8000、backend/ の変更で自動再起動）
+#   web     … Vite（:3000、/api を api へ転送）
+#
+# ホスト側のポートは .env の DB_PORT / DB_TEST_PORT / API_PORT / WEB_PORT で変えられる（既定は 54322 / 54323 / 8000 / 3000）
+# 通知（メール送信など）はローカルでは再現しない。外部へ通知するサービスは定義しない
+
 x-supabase-postgres: &supabase-postgres
   image: supabase/postgres:17.11.0.007
   environment:
@@ -11,20 +21,96 @@ x-supabase-postgres: &supabase-postgres
     timeout: 5s
     retries: 30
 
+x-api-image: &api-image
+  build:
+    context: .
+    dockerfile: docker/api.Dockerfile
+  image: idea-workspace-api-dev
+
 services:
   db:
     <<: *supabase-postgres
     ports:
-      - "54322:5432"
+      - "${DB_PORT:-54322}:5432"
     volumes:
       - db-data:/var/lib/postgresql/data
 
   db-test:
     <<: *supabase-postgres
     ports:
-      - "54323:5432"
+      - "${DB_TEST_PORT:-54323}:5432"
     tmpfs:
       - /var/lib/postgresql/data
 
+  migrate:
+    <<: *api-image
+    command:
+      - uv
+      - run
+      - --no-sync
+      - python
+      - -m
+      - backend.scripts.db_reset
+      - --if-empty
+      - --database-url
+      - postgresql://postgres:postgres@db:5432/postgres
+    volumes:
+      - ./backend:/app/backend:ro
+      - ./supabase:/app/supabase:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    <<: *api-image
+    env_file:
+      - path: .env
+        required: false
+    # .env より優先する（コンテナ内から見た接続先・ローカル用の安全な値に固定する）
+    environment:
+      DATABASE_URL: postgresql://idea_ws_app:idea_ws_app@db:5432/postgres
+      ALLOWED_ORIGINS: http://localhost:${WEB_PORT:-3000}
+      COOKIE_SECURE: "false"
+      TRUST_PROXY_HEADERS: "false"
+      SESSION_TOKEN_PEPPER: ${SESSION_TOKEN_PEPPER:-local-dev-pepper-change-me}
+      # 未設定なら Cloudflare 公式のテストキー（常に成功）
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-1x0000000000000000000000000000000AA}
+      CRON_SECRET: ${CRON_SECRET:-local-dev-cron-secret-change-me}
+      WATCHFILES_FORCE_POLLING: "true"
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./backend:/app/backend
+      # FastAPI が dist/ を配信するのは本番だけだが、ある場合に備えて読み取り専用で渡す
+      - ./dist:/app/dist:ro
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web.Dockerfile
+    image: idea-workspace-web-dev
+    environment:
+      API_PROXY_TARGET: http://api:8000
+      VITE_TURNSTILE_SITE_KEY: ${VITE_TURNSTILE_SITE_KEY:-1x00000000000000000000AA}
+      DEV_WATCH_POLLING: "true"
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    volumes:
+      - .:/app
+      - web-node-modules:/app/node_modules
+    depends_on:
+      api:
+        condition: service_healthy
+
 volumes:
   db-data:
+  web-node-modules:
