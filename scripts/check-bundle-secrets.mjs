@@ -71,6 +71,15 @@ for (const file of listFiles(DIST)) {
   }
 }
 
+// 本番のビルドに Turnstile のテスト用サイトキー（1x / 2x / 3x + 0 の並び）を埋め込まない
+const TURNSTILE_TEST_SITE_KEY = /^[123]x0{20}[A-Z]{2}$/;
+if (process.env.VERCEL_ENV === 'production') {
+  const siteKey = process.env.VITE_TURNSTILE_SITE_KEY ?? '';
+  if (!siteKey || TURNSTILE_TEST_SITE_KEY.test(siteKey)) {
+    problems.push('VITE_TURNSTILE_SITE_KEY が未設定、またはテスト用の値です（本番のビルド）');
+  }
+}
+
 if (problems.length > 0) {
   console.error('フロントのビルド成果物に秘密情報が含まれています:');
   for (const problem of problems) console.error(`  - ${problem}`);

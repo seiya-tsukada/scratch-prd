@@ -1,0 +1,14 @@
+# イメージには依存定義だけを入れる（ソースは compose でマウントする）
+.git
+.env*
+!.env.example
+node_modules
+.venv
+dist
+build
+coverage
+.mypy_cache
+.pytest_cache
+.ruff_cache
+**/__pycache__
+.vercel

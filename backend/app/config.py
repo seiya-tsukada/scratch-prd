@@ -5,10 +5,11 @@ from __future__ import annotations
 from datetime import timedelta
 from functools import lru_cache
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Self
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
-from pydantic import SecretStr
+from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -17,6 +18,16 @@ DIST_DIR = REPO_ROOT / "dist"
 
 # .env.example に記載しているプレースホルダー。この値のままなら未設定とみなす
 GEMINI_API_KEY_PLACEHOLDER = "MY_GEMINI_API_KEY"
+
+# 本番（VERCEL_ENV=production）で使ってはいけないローカル用の値
+LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1", "db", "db-test"}
+# Cloudflare Turnstile のテスト用秘密鍵は 1x / 2x / 3x + 0 の並び + AA
+TURNSTILE_TEST_SECRET_PREFIXES = (
+    "1x0000000000000000000000000000000",
+    "2x0000000000000000000000000000000",
+    "3x0000000000000000000000000000000",
+)
+MIN_PRODUCTION_SECRET_CHARS = 32
 
 
 class Settings(BaseSettings):
@@ -43,6 +54,31 @@ class Settings(BaseSettings):
     vercel_url: str | None = None
     vercel_branch_url: str | None = None
     vercel_project_production_url: str | None = None
+    # Vercel が自動で設定する（production / preview / development）。ローカルでは未設定
+    vercel_env: str | None = None
+
+    @model_validator(mode="after")
+    def reject_local_settings_in_production(self) -> Self:
+        """本番でローカル用の値のまま起動しない（設定漏れを起動時に検出する）"""
+        if self.vercel_env != "production":
+            return self
+        problems: list[str] = []
+        if urlparse(self.database_url).hostname in LOCAL_DB_HOSTS:
+            problems.append("DATABASE_URL がローカルの DB を指しています")
+        if len(self.session_token_pepper.get_secret_value()) < MIN_PRODUCTION_SECRET_CHARS:
+            problems.append(f"SESSION_TOKEN_PEPPER は {MIN_PRODUCTION_SECRET_CHARS} 文字以上にしてください")
+        turnstile = self.turnstile_secret_key.get_secret_value() if self.turnstile_secret_key else ""
+        if not turnstile or turnstile.startswith(TURNSTILE_TEST_SECRET_PREFIXES):
+            problems.append("TURNSTILE_SECRET_KEY が未設定、またはテスト用の値です")
+        if not self.cookie_secure:
+            problems.append("COOKIE_SECURE は true にしてください")
+        if not self.trust_proxy_headers:
+            problems.append("TRUST_PROXY_HEADERS は true にしてください")
+        if not self.cron_secret or len(self.cron_secret.get_secret_value()) < 16:
+            problems.append("CRON_SECRET を 16 文字以上で設定してください")
+        if problems:
+            raise ValueError("本番環境の設定に問題があります: " + " / ".join(problems))
+        return self
 
     @property
     def effective_gemini_api_key(self) -> str | None:
