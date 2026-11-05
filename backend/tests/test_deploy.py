@@ -1,14 +1,16 @@
-"""Vercel 上の動作: セキュリティヘッダー、プレビュー URL の Origin、画面（dist/）の配信"""
+"""Vercel 上の動作: セキュリティヘッダー、プレビュー URL の Origin、vercel.json と api/index.py"""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
-from fastapi import APIRouter, FastAPI
 from fastapi.testclient import TestClient
 
-from backend.app import config
+from backend.app import config, main
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_security_headers(client: TestClient) -> None:
@@ -43,31 +45,20 @@ def test_vercel_deployment_urls_are_allowed_origins(client: TestClient, monkeypa
     assert response.status_code == 403
 
 
-def test_frontend_serving_keeps_api_routes_first(tmp_path: Path) -> None:
-    """main.py と同じく、API のルートを登録したあとに app.frontend で dist/ を配信する"""
-    (tmp_path / "index.html").write_text("<html>spa</html>")
-    (tmp_path / "assets").mkdir()
-    (tmp_path / "assets" / "app.js").write_text("console.log(1)")
+def test_vercel_static_headers_match_api_headers() -> None:
+    """画面（dist/）は Vercel の CDN が配信するため、vercel.json の headers にも同じ CSP を書いている"""
+    vercel = json.loads((REPO_ROOT / "vercel.json").read_text(encoding="utf-8"))
+    headers = {h["key"]: h["value"] for rule in vercel["headers"] for h in rule["headers"]}
+    assert headers["Content-Security-Policy"] == main.CONTENT_SECURITY_POLICY
+    assert headers["X-Frame-Options"] == "DENY"
+    assert headers["X-Content-Type-Options"] == "nosniff"
 
-    app = FastAPI()
-    router = APIRouter()
 
-    @router.get("/health")
-    async def health() -> dict[str, str]:
-        return {"status": "ok"}
+def test_vercel_entrypoint_exposes_app() -> None:
+    """api/index.py（Vercel Function）は backend の FastAPI をそのまま公開する"""
+    from api.index import app
 
-    app.include_router(router, prefix="/api")
-    app.frontend("/", directory=tmp_path)
-    client = TestClient(app)
-
-    assert client.get("/api/health").json() == {"status": "ok"}
-    assert client.get("/assets/app.js").text == "console.log(1)"
-    navigation = {"accept": "text/html", "sec-fetch-mode": "navigate"}
-    assert client.get("/projects/123", headers=navigation).text == "<html>spa</html>"
-    # 存在しない API は画面ではなく 404 にする
-    api_miss = client.get("/api/does-not-exist", headers={"accept": "application/json"})
-    assert api_miss.status_code == 404
-    assert "spa" not in api_miss.text
+    assert app is main.app
 
 
 PRODUCTION_ENV = {

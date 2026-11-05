@@ -13,8 +13,6 @@ from pydantic import SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-# Vite のビルド結果。あれば FastAPI が配信する（Vercel 上）。ローカル開発では Vite が配信する
-DIST_DIR = REPO_ROOT / "dist"
 
 # .env.example に記載しているプレースホルダー。この値のままなら未設定とみなす
 GEMINI_API_KEY_PLACEHOLDER = "MY_GEMINI_API_KEY"
@@ -56,11 +54,14 @@ class Settings(BaseSettings):
     vercel_project_production_url: str | None = None
     # Vercel が自動で設定する（production / preview / development）。ローカルでは未設定
     vercel_env: str | None = None
+    # true なら DB に接続せず固定のサンプルを返す（backend/app/mock）。Supabase を用意するまでの一時的な設定
+    mock_backend: bool = False
 
     @model_validator(mode="after")
     def reject_local_settings_in_production(self) -> Self:
-        """本番でローカル用の値のまま起動しない（設定漏れを起動時に検出する）"""
-        if self.vercel_env != "production":
+        """本番でローカル用の値のまま起動しない（設定漏れを起動時に検出する）。
+        モックは DB・Turnstile・Cron を使わないため検査しない"""
+        if self.vercel_env != "production" or self.mock_backend:
             return self
         problems: list[str] = []
         if urlparse(self.database_url).hostname in LOCAL_DB_HOSTS:

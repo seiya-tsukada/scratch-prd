@@ -12,12 +12,13 @@
 | DB | Supabase の Postgres を専用スキーマ `idea_ws` で利用（`supabase/migrations/`） |
 | 認証 | 自前のゲストセッション（httpOnly Cookie）＋ 任意のメールアドレス + パスワード登録 |
 | AI | Gemini（未設定なら内蔵ジェネレータで応答し、その旨を画面に表示） |
-| ホスティング | Vercel（FastAPI が API と画面の両方を配信） |
+| ホスティング | Vercel（画面は CDN、`/api/*` は `api/index.py` の Python Function） |
 
 フロントは DB に直接アクセスせず、すべて `/api` 経由。方針・禁止事項・規約は [CLAUDE.md](CLAUDE.md)、経緯は [docs/migration-plan.md](docs/migration-plan.md)。
 
 ```
 src/                     フロント（components / services / config / utils / types）
+api/index.py             Vercel Function の入口（backend の app を公開するだけ）
 backend/app/             FastAPI（routers / services / models / config / db / security / sessions）
 backend/tests/           pytest（db/ はスキーマ・権限のテスト）
 supabase/migrations/     マイグレーション（Supabase CLI 形式）、supabase/seed.sql はサンプルとテンプレート
@@ -89,7 +90,7 @@ db-test pytest 用の Postgres（tmpfs。止めると消える）
 | | dev（docker compose） | 本番（Vercel） |
 |---|---|---|
 | DB | `db` コンテナ | Supabase の Postgres（Transaction pooler 経由） |
-| 画面の配信 | Vite の開発サーバー | `npm run build` の `dist/` を FastAPI が配信 |
+| 画面の配信 | Vite の開発サーバー | `npm run build` の `dist/` を Vercel の CDN が配信 |
 | Turnstile | 公式のテストキー（常に成功） | 本番のキー |
 | Cookie | `iws_session`（http） | `__Host-iws_session`（https） |
 | 通知（メールなど） | 再現しない | （現在は未実装） |
@@ -147,7 +148,7 @@ DB の中を見る場合: `docker compose exec db psql -U postgres`（例 `selec
 | `npm run lint` / `npm test` | 型チェック / vitest |
 | `npm run build` / `npm run check:bundle` | フロントのビルド / ビルド成果物に秘密情報が無いことの検査 |
 | `uv run pytest` | バックエンドのテスト（テスト用 DB を作り直して実行） |
-| `uv run ruff check backend && uv run mypy` | Python の lint / 型チェック |
+| `uv run ruff check backend api && uv run mypy` | Python の lint / 型チェック |
 
 GitHub Actions（[.github/workflows/ci.yml](.github/workflows/ci.yml)）が PR ごとに上記をすべて実行する。
 
@@ -175,7 +176,7 @@ GitHub Actions（[.github/workflows/ci.yml](.github/workflows/ci.yml)）が PR �
    ```
 
    ```bash
-   uv run ruff check backend && uv run ruff format --check backend && uv run mypy
+   uv run ruff check backend api && uv run ruff format --check backend api && uv run mypy
    ```
 
 5. PR を作る。説明には「何を変えたか」と「ローカルでの確認手順」（どの画面で何をすると何が起きるか）を書く。マイグレーション・環境変数・手作業が必要な設定があれば明記する。

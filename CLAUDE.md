@@ -16,8 +16,8 @@ Browser (Vite SPA, React 19 + Tailwind 4)
   │  fetch('/api/...', { credentials: 'same-origin' })   ← httpOnly Cookie セッション
   ▼
 Vercel（同一リポジトリ・同一ドメイン）
-  ├─ 静的配信: dist/（/api 以外は index.html にフォールバック）
-  └─ Vercel Function: FastAPI（/api/*）
+  ├─ 静的配信: dist/（CDN。/api 以外は index.html にフォールバック）
+  └─ Vercel Function: api/index.py → backend/app の FastAPI（/api/* を rewrites で集約）
         auth / workspace / ai / events / account / cron
               │  psycopg 3（Supavisor transaction mode）
               ▼
@@ -99,7 +99,8 @@ backend/
                          （Phase 4a で追加: models/workspace.py, routers/workspace.py, services/{workspace_repo,legacy_import}.py）
   scripts/               db_reset.py（ローカル DB の作り直し）
   tests/                 AI API・プロンプト・フォールバックのテスト、db/（スキーマ・権限・関数のテスト）
-vercel.json              Vercel の設定（framework: fastapi、ビルド、Cron）。エントリポイントは pyproject.toml の [tool.vercel]
+vercel.json              Vercel の設定（framework: vite、ビルド、rewrites、画面のヘッダー、Cron）
+api/index.py             Vercel Function の入口。backend.app.main の app を公開するだけ（api/ に .py を増やさない）
 scripts/                 check-bundle-secrets.mjs（ビルド成果物の秘密情報検査）
 .github/workflows/       ci.yml（lint / テスト / ビルド / 秘密情報検査）
 supabase/migrations/     SQL マイグレーション（Supabase CLI 形式）
@@ -145,7 +146,7 @@ DB（Phase 1〜）:
 docker compose up -d db db-test             # db（開発用 :54322）と db-test（pytest 用 :54323, tmpfs）
 uv run python -m backend.scripts.db_reset   # 開発用 DB の idea_ws を作り直す（マイグレーション + seed）
 uv run pytest                               # db-test を作り直してテスト
-uv run ruff check backend && uv run ruff format --check backend && uv run mypy
+uv run ruff check backend api && uv run ruff format --check backend api && uv run mypy
 ```
 
 - マイグレーションは `supabase/migrations/`（Supabase CLI 形式）、コンテンツの初期データは `supabase/seed.sql`。本番への適用手順は [docs/supabase-setup.md](docs/supabase-setup.md)。
@@ -176,7 +177,8 @@ Workspace API（Phase 4a〜）:
 計測・デプロイ（Phase 6〜）:
 
 - イベントは `backend/app/services/events.py` のホワイトリスト（`EVENT_SCHEMAS`）に追加してから使う。API で起きる出来事はサーバー側で `record_event`、画面上の操作だけ `src/services/analytics.ts` の `track`（`CLIENT_EVENTS`）。properties に個人情報・メモ本文を入れない。
-- 本番では FastAPI が `dist/` も配信する（`app.frontend`）。セキュリティヘッダー（CSP など）は `main.py`。外部のスクリプト・画像を足すときは CSP も直す。
+- 本番の画面（`dist/`）は Vercel の CDN が配信する。セキュリティヘッダー（CSP など）は API が `main.py`、画面が `vercel.json` の `headers`。外部のスクリプト・画像を足すときは両方の CSP を直す（`test_deploy.py` が一致を検証）。
+- `MOCK_BACKEND=true` は Supabase を用意するまでの一時的なモック（`backend/app/mock/`。DB に接続せず固定のサンプルを返す）。
 - 環境変数を足したら `docs/deploy.md` の表と `.env.example` を更新する。
 - `VERCEL_ENV=production` では `config.Settings` がローカル用の値（localhost の DB・テスト用 Turnstile キー・短い pepper・`COOKIE_SECURE=false` など）を拒否して起動しない。`check:bundle` も本番ビルドにテスト用サイトキーがあれば失敗する。
 - 初回の案内と「貼るだけ PRD」は `QuickPrdDialog` を共有する（Phase 7）。PRD 生成は `App.tsx` の `generatePrdFromNotes` に集約している。
