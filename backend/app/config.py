@@ -26,6 +26,8 @@ TURNSTILE_TEST_SECRET_PREFIXES = (
     "3x0000000000000000000000000000000",
 )
 MIN_PRODUCTION_SECRET_CHARS = 32
+# DATABASE_URL が未設定のときのローカル（docker compose の db）の接続先
+LOCAL_DATABASE_URL = "postgresql://idea_ws_app:idea_ws_app@localhost:54322/postgres"
 
 
 class Settings(BaseSettings):
@@ -34,10 +36,11 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.8-flash"
 
-    # バックエンドの DB 接続（本番は Supavisor の transaction pooler、ユーザーは idea_ws_app）
-    database_url: str = "postgresql://idea_ws_app:idea_ws_app@localhost:54322/postgres"
-    # セッショントークン・IP をハッシュ化する HMAC の鍵。必須
-    session_token_pepper: SecretStr
+    # バックエンドの DB 接続（本番は Supavisor の transaction pooler、ユーザーは idea_ws_app）。
+    # 未設定ならローカルでは LOCAL_DATABASE_URL、Vercel 上ではモック（use_mock）になる
+    database_url: str | None = None
+    # セッショントークン・IP をハッシュ化する HMAC の鍵。DB を使うときは必須（モックでは使わない）
+    session_token_pepper: SecretStr | None = None
     # 状態を変えるリクエストで許可する Origin（カンマ区切り）
     allowed_origins: str = "http://localhost:3000"
     turnstile_secret_key: SecretStr | None = None
@@ -54,19 +57,43 @@ class Settings(BaseSettings):
     vercel_project_production_url: str | None = None
     # Vercel が自動で設定する（production / preview / development）。ローカルでは未設定
     vercel_env: str | None = None
-    # true なら DB に接続せず固定のサンプルを返す（backend/app/mock）。Supabase を用意するまでの一時的な設定
-    mock_backend: bool = False
+    # DB に接続せず固定のサンプルを返す（backend/app/mock）。Supabase を用意するまでの一時的な設定。
+    # 未設定なら自動: Vercel 上（VERCEL_ENV あり）で DATABASE_URL が無ければモック。false で自動切り替えを止める
+    mock_backend: bool | None = None
+
+    @property
+    def use_mock(self) -> bool:
+        """環境変数を何も設定せずに Vercel へデプロイしても動くよう、DB の設定が無ければモックで応答する"""
+        if self.mock_backend is not None:
+            return self.mock_backend
+        return self.vercel_env is not None and not self.database_url
+
+    @property
+    def effective_database_url(self) -> str:
+        return self.database_url or LOCAL_DATABASE_URL
+
+    @property
+    def pepper(self) -> str:
+        if self.session_token_pepper is None:
+            raise RuntimeError("SESSION_TOKEN_PEPPER が設定されていません")
+        return self.session_token_pepper.get_secret_value()
+
+    @model_validator(mode="after")
+    def require_pepper_unless_mock(self) -> Self:
+        if not self.use_mock and not self.session_token_pepper:
+            raise ValueError("SESSION_TOKEN_PEPPER を設定してください")
+        return self
 
     @model_validator(mode="after")
     def reject_local_settings_in_production(self) -> Self:
         """本番でローカル用の値のまま起動しない（設定漏れを起動時に検出する）。
         モックは DB・Turnstile・Cron を使わないため検査しない"""
-        if self.vercel_env != "production" or self.mock_backend:
+        if self.vercel_env != "production" or self.use_mock:
             return self
         problems: list[str] = []
-        if urlparse(self.database_url).hostname in LOCAL_DB_HOSTS:
+        if urlparse(self.effective_database_url).hostname in LOCAL_DB_HOSTS:
             problems.append("DATABASE_URL がローカルの DB を指しています")
-        if len(self.session_token_pepper.get_secret_value()) < MIN_PRODUCTION_SECRET_CHARS:
+        if len(self.pepper) < MIN_PRODUCTION_SECRET_CHARS:
             problems.append(f"SESSION_TOKEN_PEPPER は {MIN_PRODUCTION_SECRET_CHARS} 文字以上にしてください")
         turnstile = self.turnstile_secret_key.get_secret_value() if self.turnstile_secret_key else ""
         if not turnstile or turnstile.startswith(TURNSTILE_TEST_SECRET_PREFIXES):
@@ -97,7 +124,7 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()  # type: ignore[call-arg]  # 必須項目は環境変数・.env から読む
+    return Settings()
 
 
 GEMINI_TEMPERATURE = 0.2

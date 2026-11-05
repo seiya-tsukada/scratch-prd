@@ -75,7 +75,7 @@ PRODUCTION_ENV = {
 def test_production_settings_are_accepted(monkeypatch: pytest.MonkeyPatch) -> None:
     for name, value in PRODUCTION_ENV.items():
         monkeypatch.setenv(name, value)
-    settings = config.Settings()  # type: ignore[call-arg]
+    settings = config.Settings()
     assert settings.vercel_env == "production"
 
 
@@ -97,10 +97,10 @@ def test_local_settings_are_rejected_in_production(monkeypatch: pytest.MonkeyPat
         monkeypatch.setenv(key, default)
     monkeypatch.setenv(name, value)
     with pytest.raises(ValueError, match="本番環境の設定に問題があります"):
-        config.Settings()  # type: ignore[call-arg]
+        config.Settings()
 
 
 def test_local_settings_are_allowed_outside_production(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("VERCEL_ENV", "preview")
     monkeypatch.setenv("COOKIE_SECURE", "false")
-    config.Settings()  # type: ignore[call-arg]
+    config.Settings()

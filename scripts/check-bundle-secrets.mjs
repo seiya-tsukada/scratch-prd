@@ -73,21 +73,21 @@ for (const file of listFiles(DIST)) {
 
 // 本番のビルドに Turnstile のテスト用サイトキー（1x / 2x / 3x + 0 の並び）を埋め込まない
 const TURNSTILE_TEST_SITE_KEY = /^[123]x0{20}[A-Z]{2}$/;
-// MOCK_BACKEND（DB なしのモック）ではゲスト作成を行わず Turnstile を使わないため検査しない。
-// 真偽値の解釈はバックエンド（pydantic の bool）と同じにする: 1 / true / t / yes / y / on（大文字小文字・前後の空白は問わない）
+// モック（DB なし）ではゲスト作成を行わず Turnstile を使わないため検査しない。
+// モックかどうかはバックエンド（config.Settings.use_mock）と同じ規則で決める:
+//   MOCK_BACKEND があればその真偽値（pydantic の bool と同じ解釈）、無ければ Vercel 上で DATABASE_URL が未設定ならモック
 const TRUE_VALUES = new Set(['1', 'true', 't', 'yes', 'y', 'on']);
-const mockBackendRaw = process.env.MOCK_BACKEND;
-const mockBackend = TRUE_VALUES.has((mockBackendRaw ?? '').trim().toLowerCase());
-if (process.env.VERCEL_ENV === 'production' && !mockBackend) {
+const mockBackendRaw = (process.env.MOCK_BACKEND ?? '').trim().toLowerCase();
+const useMock = mockBackendRaw
+  ? TRUE_VALUES.has(mockBackendRaw)
+  : Boolean(process.env.VERCEL_ENV) && !process.env.DATABASE_URL;
+if (process.env.VERCEL_ENV === 'production' && !useMock) {
   const siteKey = process.env.VITE_TURNSTILE_SITE_KEY ?? '';
   if (!siteKey || TURNSTILE_TEST_SITE_KEY.test(siteKey)) {
-    const seen = mockBackendRaw === undefined ? '未設定' : `"${mockBackendRaw}"`;
-    problems.push(
-      'VITE_TURNSTILE_SITE_KEY が未設定、またはテスト用の値です（本番のビルド）。' +
-        `モックとしてデプロイする場合は環境変数 MOCK_BACKEND=true を Production に設定してください（ビルド時の MOCK_BACKEND: ${seen}）`
-    );
+    problems.push('VITE_TURNSTILE_SITE_KEY が未設定、またはテスト用の値です（本番のビルド）');
   }
 }
+if (useMock) console.log('モック（DB なし）としてビルドします: Turnstile のサイトキーは検査しません');
 
 if (problems.length > 0) {
   console.error('フロントのビルド成果物に秘密情報が含まれています:');
