@@ -73,11 +73,19 @@ for (const file of listFiles(DIST)) {
 
 // 本番のビルドに Turnstile のテスト用サイトキー（1x / 2x / 3x + 0 の並び）を埋め込まない
 const TURNSTILE_TEST_SITE_KEY = /^[123]x0{20}[A-Z]{2}$/;
-// MOCK_BACKEND=true（DB なしのモック）ではゲスト作成を行わず Turnstile を使わないため検査しない
-if (process.env.VERCEL_ENV === 'production' && process.env.MOCK_BACKEND !== 'true') {
+// MOCK_BACKEND（DB なしのモック）ではゲスト作成を行わず Turnstile を使わないため検査しない。
+// 真偽値の解釈はバックエンド（pydantic の bool）と同じにする: 1 / true / t / yes / y / on（大文字小文字・前後の空白は問わない）
+const TRUE_VALUES = new Set(['1', 'true', 't', 'yes', 'y', 'on']);
+const mockBackendRaw = process.env.MOCK_BACKEND;
+const mockBackend = TRUE_VALUES.has((mockBackendRaw ?? '').trim().toLowerCase());
+if (process.env.VERCEL_ENV === 'production' && !mockBackend) {
   const siteKey = process.env.VITE_TURNSTILE_SITE_KEY ?? '';
   if (!siteKey || TURNSTILE_TEST_SITE_KEY.test(siteKey)) {
-    problems.push('VITE_TURNSTILE_SITE_KEY が未設定、またはテスト用の値です（本番のビルド）');
+    const seen = mockBackendRaw === undefined ? '未設定' : `"${mockBackendRaw}"`;
+    problems.push(
+      'VITE_TURNSTILE_SITE_KEY が未設定、またはテスト用の値です（本番のビルド）。' +
+        `モックとしてデプロイする場合は環境変数 MOCK_BACKEND=true を Production に設定してください（ビルド時の MOCK_BACKEND: ${seen}）`
+    );
   }
 }
 
