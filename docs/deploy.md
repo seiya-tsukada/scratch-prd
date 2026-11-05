@@ -1,9 +1,47 @@
 # デプロイ手順（Vercel + Supabase）
 
-構成: 1 つの Vercel プロジェクトに FastAPI（`backend/app/main.py`）をデプロイし、Vite のビルド結果（`dist/`）も FastAPI が配信する。
-DB は Supabase の Postgres（`idea_ws` スキーマ）。設定ファイルは [vercel.json](../vercel.json) と `pyproject.toml` の `[tool.vercel]`。
+構成: 1 つの Vercel プロジェクト（Framework Preset は **Vite**）。設定は [vercel.json](../vercel.json) だけ。
 
-- 参考: [Vercel – FastAPI](https://vercel.com/docs/frameworks/backend/fastapi) / [Python runtime](https://vercel.com/docs/functions/runtimes/python) / [Cron jobs](https://vercel.com/docs/cron-jobs)
+```
+リクエスト ─┬─ /api/*   → rewrites → api/index.py（Vercel Function, Python 3.12）→ backend/app の FastAPI
+            ├─ 静的ファイル（dist/assets など）→ Vercel の CDN
+            └─ それ以外 → rewrites → /index.html（SPA の画面 URL を直接開いたとき）
+```
+
+- `api/index.py` は `backend.app.main` の `app` を公開するだけの入口。処理はすべて `backend/` に書く。`api/` に `.py` を増やすとそれぞれが別の Function になるので、増やさない（`__init__.py` も置かない）
+- Python の依存は `pyproject.toml` + `uv.lock`、バージョンは `.python-version`（3.12）から Vercel が読む
+- 画面のレスポンスヘッダー（CSP など）は `vercel.json` の `headers`、API のヘッダーは `main.py`。値は同じにする（`backend/tests/test_deploy.py` が CSP の一致を検証）
+- DB は Supabase の Postgres（`idea_ws` スキーマ）。準備できるまでは下の「モックでのデプロイ」
+- 参考: [Python runtime](https://vercel.com/docs/functions/runtimes/python) / [api ディレクトリ](https://vercel.com/docs/functions/runtimes/python/api-directory) / [vercel.json](https://vercel.com/docs/project-configuration/vercel-json) / [Cron jobs](https://vercel.com/docs/cron-jobs)
+- ⚠️ ルートの `pyproject.toml` に FastAPI があるため、Framework Preset が FastAPI と自動判定されると `api/` が Function にならない（公式ドキュメント: Python のフレームワークプリセットが `api/` より優先される）。`vercel.json` の `"framework": "vite"` で Vite に固定している。Project Settings 側でも Vite になっていることを確認する
+
+ローカルの `vercel build`（CLI 65.11.0）で、`api/index.func`（python3.12・maxDuration 90）が作られ、`backend/` と `mock/fixture.json` が含まれ `dist/`・`node_modules/` が含まれないこと、ルートが上の図のとおりになることを確認済み。
+
+## モックでのデプロイ（Supabase を用意するまでの一時的な構成）
+
+`MOCK_BACKEND=true` にすると、API は DB に接続せず `backend/app/mock/` の固定サンプルを返す。Supabase・Turnstile・Resend（メール送信は未実装）が無くてもデプロイして画面を確認できる。
+
+- ログイン中ユーザーは常に同じゲスト、プロジェクトはサンプル 1 件（初回の案内は済み扱い）
+- 殴り書きの整形・PRD 生成は内蔵ジェネレータで応答する（「内蔵ジェネレータで作成しました」と表示される）
+- 保存・変更（メモの作成・編集、登録・ログインなど）は 503 `mock_mode` になり、画面に「デモ環境のため保存できません」と出る
+- 本番用の設定検査（`config.Settings`）と `check:bundle` の Turnstile サイトキーの検査は行わない
+
+Vercel の Production に設定する環境変数（これだけでよい）:
+
+| 変数 | 値 |
+|---|---|
+| `MOCK_BACKEND` | `true` |
+| `SESSION_TOKEN_PEPPER` | 任意のランダムな文字列（起動に必須。モックでは使わない） |
+
+手順: GitHub リポジトリを Vercel に Import → Node.js を 24.x にする → 上の 2 つを Production に設定 → `main` をデプロイ → `https://<デプロイ URL>/api/health` が `"mode":"mock"` を返すことを確認する。
+
+ローカルで同じ状態を確認する場合（`npm run build` 済み）:
+
+```bash
+VERCEL_ENV=production MOCK_BACKEND=true COOKIE_SECURE=false ALLOWED_ORIGINS=http://localhost:8010 uv run uvicorn backend.app.main:app --port 8010
+```
+
+Supabase に切り替えるときは、`MOCK_BACKEND` を削除して下の「環境変数」の表どおりに設定し、`backend/app/mock/` と `main.py` / `config.py` / `scripts/check-bundle-secrets.mjs` / `src/services/apiClient.ts`（`mock_mode`）のモック分岐を削除する。
 
 ## 環境の分け方
 
@@ -31,6 +69,7 @@ Vercel の Project Settings → Environment Variables で、環境ごとに設�
 | `CRON_SECRET` | 16 文字以上のランダム文字列 | 任意 | `GET /api/cron/cleanup` の認証 |
 | `GEMINI_API_KEY` | 任意 | 任意 | 未設定なら内蔵ジェネレータで応答（`usedFallback: true`） |
 | `GEMINI_MODEL` | 任意（既定 `gemini-3.8-flash`） | 任意 | |
+| `MOCK_BACKEND` | Supabase 接続後は設定しない | 任意（既定 `false`） | `true` で DB なしのモック（上の「モックでのデプロイ」） |
 
 > Production（Vercel が `VERCEL_ENV=production` を設定する）では、次のどれかに当てはまると API が起動しない（ローカル用の設定のまま本番に出さないため）。
 > `DATABASE_URL` がローカル（localhost / db）・`SESSION_TOKEN_PEPPER` が 32 文字未満・`TURNSTILE_SECRET_KEY` が未設定かテスト用・`COOKIE_SECURE` / `TRUST_PROXY_HEADERS` が `true` でない・`CRON_SECRET` が 16 文字未満。
@@ -55,7 +94,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 - [ ] 許可するホスト名に本番ドメインを追加する
 
 ### Vercel
-- [ ] GitHub リポジトリを Import する。Framework Preset は `vercel.json` の `"framework": "fastapi"` が使われる
+- [ ] GitHub リポジトリを Import する。Framework Preset は **Vite**（`vercel.json` の `"framework": "vite"`）。Build Command / Output Directory も `vercel.json` の値（`npm run build && npm run check:bundle` / `dist`）が使われる
 - [ ] Node.js のバージョンを 24.x にする（Project Settings → Build and Deployment）
 - [ ] 上の表のとおり環境変数を Production に設定する
 - [ ] プレビューデプロイを使わないため、Preview 環境には環境変数を設定しない
@@ -68,7 +107,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 1. ビルドログで次を確認する
    - `npm ci && npm run build && npm run check:bundle` が成功し、「秘密情報の検査: 問題なし」が出ている
    - Python の依存が `pyproject.toml` / `uv.lock` からインストールされている
-   - ⚠️ FastAPI のプロジェクトでビルドコマンドに Node.js が使えることはドキュメントに明記されていない。失敗した場合は、Vercel Services（ベータ）でフロントとバックエンドを分ける構成に切り替える（[Services](https://vercel.com/docs/services)）
+   - Functions に `api/index` があり、Runtime が Python 3.12 になっている
 2. `https://<デプロイ URL>/api/health` が `{"status":"ok",...}` を返す
 3. 画面を開き、ゲストとして始まる（Turnstile が表示され、サンプルのプロジェクトが出る）
 4. メモを作成・編集し、再読み込みしても残っている
@@ -85,12 +124,13 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://<本番ドメイン>/api/cr
 ## ローカルで `vercel dev` を使う場合（参考）
 
 ```bash
-npm run build                                       # FastAPI が配信する dist/ を作る
-VERCEL_TELEMETRY_DISABLED=1 npx vercel@64.0.2 dev --local --listen 3000
+VERCEL_TELEMETRY_DISABLED=1 npx vercel@65.11.0 dev --local --listen 3000
 ```
 
 - `--local` ではプロジェクトにリンクせず、環境変数は `.env` から読む（シェルの環境変数は Python に渡らない）。`.env` の `ALLOWED_ORIGINS` に合わせて `--listen 3000` で起動する
-- 確認済み（Phase 6 時点）: FastAPI プリセットとエントリポイントが認識され、`/` で dist/ の画面、画面の URL で `index.html`、存在しない `/api/...` は 404、CSP などのヘッダー、`/api/cron/cleanup` は秘密が無いと 401
+- 確認済み（CLI 65.11.0、`api/` 構成）: `/api/health` が FastAPI に元のパスのまま届く、存在しない `/api/...` は FastAPI の 404、Origin の検査（403）、画面に CSP などのヘッダー
+- ⚠️ CLI 65.11.0 の `vercel dev` は `functions` の `maxDuration` があると「must not contain `maxDuration`」で Function を起動しない（`vercel build` とデプロイでは問題ない）。確かめるときだけ一時的に外す
+- ⚠️ `vercel dev` はローカルの `python3` で Function を動かす。macOS の標準（3.9）だと起動しないので、PATH の先頭に 3.12 の `python3` を置く（`uv python find --no-project 3.12`）
 - ⚠️ 既知の問題: CLI 64.0.2 / 65.3.1 の `--local` モードでは、ブラウザから同時に複数のリクエストが来ると CLI が Python の開発サーバーを停止し、その後のリクエストが `FUNCTION_INVOCATION_FAILED`（500）になる（ログに `ECONNREFUSED`）。1 件ずつのリクエストでは動く。アプリ側の問題ではないため、日常の開発と PR の確認は docker compose（または `npm run dev`）で行う
 
 ## 運用メモ

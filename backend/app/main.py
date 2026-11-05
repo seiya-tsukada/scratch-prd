@@ -1,5 +1,5 @@
 """FastAPI アプリ。ローカルは `npm run dev:api`（画面は Vite が配信）。
-本番は Vercel の FastAPI として /api/* を受け、ビルド済みの画面（dist/）も配信する"""
+本番は Vercel Function（api/index.py）として /api/* だけを受ける。画面（dist/）は Vercel の CDN が配信する"""
 
 from __future__ import annotations
 
@@ -12,12 +12,16 @@ from psycopg import errors as pg_errors
 
 from backend.app import config
 from backend.app.db import create_pool
+from backend.app.mock import router as mock_router
 from backend.app.routers import account, ai, auth, cron, events, workspace
 from backend.app.services.workspace_repo import ConflictError, LimitExceededError, NotFoundError
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    if config.get_settings().mock_backend:
+        yield
+        return
     pool = create_pool(config.get_settings().database_url)
     await pool.open()
     app.state.pool = pool
@@ -88,13 +92,13 @@ async def limit_exceeded(request: Request, exc: LimitExceededError) -> JSONRespo
     return JSONResponse(status_code=422, content={"detail": detail})
 
 
-app.include_router(auth.router, prefix="/api")
-app.include_router(account.router, prefix="/api")
-app.include_router(cron.router, prefix="/api")
-app.include_router(ai.router, prefix="/api")
-app.include_router(workspace.router, prefix="/api")
-app.include_router(events.router, prefix="/api")
-
-# ビルド済みの画面を配信する（API のルートが常に優先され、画面の URL を直接開いたときは index.html を返す）
-if config.DIST_DIR.is_dir():
-    app.frontend("/", directory=config.DIST_DIR)
+if config.get_settings().mock_backend:
+    # DB なしのモック（Supabase を用意するまでの一時的な構成）
+    app.include_router(mock_router.router, prefix="/api")
+else:
+    app.include_router(auth.router, prefix="/api")
+    app.include_router(account.router, prefix="/api")
+    app.include_router(cron.router, prefix="/api")
+    app.include_router(ai.router, prefix="/api")
+    app.include_router(workspace.router, prefix="/api")
+    app.include_router(events.router, prefix="/api")
