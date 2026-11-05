@@ -19,7 +19,7 @@ def new_token() -> str:
 
 
 def _hmac(purpose: str, value: str) -> bytes:
-    pepper = config.get_settings().session_token_pepper.get_secret_value()
+    pepper = config.get_settings().pepper
     return hmac.new(pepper.encode(), f"{purpose}:{value}".encode(), hashlib.sha256).digest()
 
 

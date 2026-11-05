@@ -6,7 +6,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.app.config import Settings
+from backend.app.config import LOCAL_DATABASE_URL, Settings
 from backend.app.mock import router as mock_router
 from backend.tests.conftest import TEST_ORIGIN
 
@@ -70,6 +70,43 @@ def test_ai_uses_builtin_generator(mock_client: TestClient) -> None:
 
 def test_production_validation_is_skipped_in_mock_mode() -> None:
     with pytest.raises(ValueError):
-        Settings(session_token_pepper="short", vercel_env="production")  # type: ignore[arg-type]
+        Settings(session_token_pepper="short", vercel_env="production", database_url="postgresql://u@h/db")  # type: ignore[arg-type]
     settings = Settings(session_token_pepper="short", vercel_env="production", mock_backend=True)  # type: ignore[arg-type]
-    assert settings.mock_backend is True
+    assert settings.use_mock is True
+
+
+def _settings_without_env(monkeypatch: pytest.MonkeyPatch, **env: str) -> Settings:
+    """.env と conftest の環境変数を使わず、指定した環境変数だけで Settings を作る"""
+    for name in ["DATABASE_URL", "SESSION_TOKEN_PEPPER", "MOCK_BACKEND", "VERCEL_ENV", "TURNSTILE_SECRET_KEY"]:
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    return Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+def test_vercel_without_any_env_falls_back_to_mock(monkeypatch: pytest.MonkeyPatch) -> None:
+    """環境変数を何も設定せずにデプロイしても起動する（VERCEL_ENV は Vercel が自動で設定する）"""
+    settings = _settings_without_env(monkeypatch, VERCEL_ENV="production")
+    assert settings.use_mock is True
+
+
+def test_database_url_on_vercel_disables_auto_mock(monkeypatch: pytest.MonkeyPatch) -> None:
+    url = "postgresql://idea_ws_app.abc:secret@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres"
+    settings = _settings_without_env(monkeypatch, VERCEL_ENV="preview", DATABASE_URL=url, SESSION_TOKEN_PEPPER="p")
+    assert settings.use_mock is False
+    # 本番では DB を使う設定として検査される（ほかの必須値が無いので起動しない）
+    with pytest.raises(ValueError, match="本番環境の設定に問題があります"):
+        _settings_without_env(monkeypatch, VERCEL_ENV="production", DATABASE_URL=url, SESSION_TOKEN_PEPPER="p")
+
+
+def test_mock_backend_false_disables_auto_mock(monkeypatch: pytest.MonkeyPatch) -> None:
+    with pytest.raises(ValueError, match="SESSION_TOKEN_PEPPER"):
+        _settings_without_env(monkeypatch, VERCEL_ENV="production", MOCK_BACKEND="false")
+
+
+def test_local_without_database_url_uses_local_db(monkeypatch: pytest.MonkeyPatch) -> None:
+    settings = _settings_without_env(monkeypatch, SESSION_TOKEN_PEPPER="p")
+    assert settings.use_mock is False
+    assert settings.effective_database_url == LOCAL_DATABASE_URL
+    with pytest.raises(ValueError, match="SESSION_TOKEN_PEPPER"):
+        _settings_without_env(monkeypatch)
