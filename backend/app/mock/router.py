@@ -22,8 +22,6 @@ from backend.app import security
 from backend.app.models.ai import (
     GeneratePrdRequest,
     GeneratePrdResponse,
-    StructureRoughNoteRequest,
-    StructureRoughNoteResponse,
 )
 from backend.app.models.auth import MeResponse
 from backend.app.models.workspace import Bootstrap, Project, ProjectData
@@ -101,12 +99,6 @@ async def project_data(project_id: UUID) -> ProjectData:
     if project_id != data.current_project_id or data.data is None:
         raise HTTPException(status_code=404, detail={"code": "not_found"})
     return data.data
-
-
-@router.post("/structure-rough-note", response_model_exclude_none=True)
-async def structure_rough_note(request: StructureRoughNoteRequest) -> StructureRoughNoteResponse:
-    note = fallbacks.structure_rough_note_locally(request.title, request.content)
-    return StructureRoughNoteResponse(**note.model_dump(), used_fallback=True, fallback_reason="no_api_key")
 
 
 @router.post("/generate-prd", response_model_exclude_none=True)

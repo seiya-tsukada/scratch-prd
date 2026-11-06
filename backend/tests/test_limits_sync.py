@@ -21,7 +21,6 @@ def test_input_limits_match_frontend() -> None:
         "MAX_NOTES": config.MAX_NOTES,
         "MAX_NOTE_CONTENT_CHARS": config.MAX_NOTE_CONTENT_CHARS,
         "MAX_TOTAL_NOTE_CHARS": config.MAX_TOTAL_NOTE_CHARS,
-        "MAX_ROUGH_NOTE_CHARS": config.MAX_ROUGH_NOTE_CHARS,
         "MAX_TITLE_CHARS": config.MAX_TITLE_CHARS,
         "MAX_PREVIOUS_ITEMS": config.MAX_PREVIOUS_ITEMS,
         "MAX_PREVIOUS_ITEM_CHARS": config.MAX_PREVIOUS_ITEM_CHARS,

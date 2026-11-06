@@ -54,34 +54,6 @@ class PrdContradiction(CamelModel):
     notes_involved: list[str]
 
 
-# ---------------------------------------------------------------- 殴り書きの整形
-
-
-class StructureRoughNoteRequest(CamelModel):
-    title: str | None = Field(default=None, max_length=config.MAX_TITLE_CHARS)
-    content: str = Field(max_length=config.MAX_ROUGH_NOTE_CHARS)
-    project_name: str | None = Field(default=None, max_length=config.MAX_TITLE_CHARS)
-
-    @field_validator("content")
-    @classmethod
-    def content_not_blank(cls, value: str) -> str:
-        if not value.strip():
-            raise ValueError("Note content is required")
-        return value
-
-
-class StructuredNote(CamelModel):
-    """整形結果の本体。Gemini の responseSchema にも使う"""
-
-    structured_title: str
-    structured_content: str
-
-
-class StructureRoughNoteResponse(StructuredNote):
-    used_fallback: bool
-    fallback_reason: FallbackReason | None = None
-
-
 # ---------------------------------------------------------------- PRD 生成
 
 

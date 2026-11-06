@@ -22,7 +22,7 @@ PropertyRule = type[bool] | type[int] | frozenset[str]
 
 GENERATION_MODES = frozenset({"strict", "suggest", "expand"})
 DETAIL_LEVELS = frozenset({"brief", "standard", "detailed"})
-AI_KINDS = frozenset({"structure", "prd"})
+AI_KINDS = frozenset({"prd"})
 SIGNUP_METHODS = frozenset({"password"})
 SIGNUP_PROMPT_TRIGGERS = frozenset({"first_prd", "note_count", "quota"})
 
@@ -30,7 +30,6 @@ EVENT_SCHEMAS: dict[str, dict[str, PropertyRule]] = {
     "app_opened": {},
     "guest_created": {},
     "note_created": {},
-    "rough_note_structured": {"usedFallback": bool},
     "prd_generated": {"mode": GENERATION_MODES, "detailLevel": DETAIL_LEVELS, "noteCount": int, "usedFallback": bool},
     "prd_copied_for_ai": {},
     "prd_downloaded": {},
@@ -43,7 +42,7 @@ EVENT_SCHEMAS: dict[str, dict[str, PropertyRule]] = {
     "onboarding_started": {},
     "onboarding_completed": {},
     "onboarding_skipped": {},
-    "quick_prd_used": {"structured": bool},
+    "quick_prd_used": {},
     "open_question_answered": {},
     "prd_regenerated_with_answers": {"answers": int},
     "contradiction_viewed": {"count": int},

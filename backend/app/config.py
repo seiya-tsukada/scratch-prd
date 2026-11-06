@@ -134,7 +134,6 @@ GEMINI_TIMEOUT_SECONDS = 60
 MAX_NOTES = 50
 MAX_NOTE_CONTENT_CHARS = 20_000
 MAX_TOTAL_NOTE_CHARS = 100_000
-MAX_ROUGH_NOTE_CHARS = 20_000
 MAX_TITLE_CHARS = 200
 # 再生成時に渡す前回の PRD の要約（見出し・事実・未決事項・決定事項）の件数と 1 件あたりの文字数
 MAX_PREVIOUS_ITEMS = 100
@@ -174,10 +173,10 @@ SESSION_COOKIE_NAME = "iws_session"
 SECURE_SESSION_COOKIE_NAME = "__Host-iws_session"
 
 # AI の日次利用上限（日付は JST）
-AiKind = Literal["structure", "prd"]
+AiKind = Literal["prd"]
 AI_DAILY_QUOTAS: dict[str, dict[AiKind, int]] = {
-    "guest": {"structure": 20, "prd": 5},
-    "registered": {"structure": 100, "prd": 30},
+    "guest": {"prd": 5},
+    "registered": {"prd": 30},
 }
 
 # ゲスト作成の IP 単位レート制限

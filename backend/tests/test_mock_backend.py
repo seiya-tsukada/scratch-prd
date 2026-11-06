@@ -58,10 +58,6 @@ def test_origin_is_still_checked(mock_client: TestClient) -> None:
 
 
 def test_ai_uses_builtin_generator(mock_client: TestClient) -> None:
-    structured = mock_client.post("/api/structure-rough-note", json={"title": "t", "content": "- a\n- b"}).json()
-    assert structured["usedFallback"] is True
-    assert structured["fallbackReason"] == "no_api_key"
-
     notes = [{"id": "n1", "title": "メモ", "content": "本文"}]
     prd = mock_client.post("/api/generate-prd", json={"projectName": "p", "notes": notes})
     assert prd.status_code == 200, prd.text

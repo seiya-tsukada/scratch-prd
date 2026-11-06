@@ -3,8 +3,6 @@ import {
   GeneratePrdRequest,
   GeneratePrdResponse,
   QuotaExceededDetail,
-  StructureRoughNoteRequest,
-  StructureRoughNoteResponse,
 } from '../config/api';
 import { QUOTA_UPGRADE_EVENT, SESSION_EXPIRED_EVENT } from '../config/app';
 
@@ -43,7 +41,6 @@ const CODE_MESSAGES: Record<string, string> = {
 };
 
 const QUOTA_KIND_LABELS: Record<QuotaExceededDetail['kind'], string> = {
-  structure: '殴り書きの整形',
   prd: 'PRD生成',
 };
 
@@ -94,6 +91,3 @@ export async function requestJson<TResponse>(
 
 export const generatePrd = (payload: GeneratePrdRequest) =>
   requestJson<GeneratePrdResponse>(API_ENDPOINTS.GENERATE_PRD, { method: 'POST', body: payload }, 'AI生成サーバーエラー');
-
-export const structureRoughNote = (payload: StructureRoughNoteRequest) =>
-  requestJson<StructureRoughNoteResponse>(API_ENDPOINTS.STRUCTURE_ROUGH_NOTE, { method: 'POST', body: payload });

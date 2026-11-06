@@ -5,30 +5,25 @@ from __future__ import annotations
 from typing import Any
 
 import psycopg
-import pytest
 from fastapi.testclient import TestClient
 
 from backend.app import config
 from backend.app.main import app
-from backend.app.models.ai import GeneratedPrd, StructuredNote
+from backend.app.models.ai import GeneratedPrd
 from backend.app.services.gemini import get_gemini_client
 
 from .test_ai_router import FakeGemini
 
 PRD_REQUEST = {"projectName": "P", "mode": "strict", "detailLevel": "brief", "notes": [{"id": "n1", "content": "abc"}]}
-STRUCTURE_REQUEST = {"content": "hello"}
 
 
 def use_gemini(gemini: FakeGemini | None) -> None:
     app.dependency_overrides[get_gemini_client] = lambda: gemini
 
 
-@pytest.mark.parametrize(
-    ("path", "body"), [("/api/generate-prd", PRD_REQUEST), ("/api/structure-rough-note", STRUCTURE_REQUEST)]
-)
-def test_ai_requires_session(client: TestClient, path: str, body: dict[str, Any]) -> None:
+def test_ai_requires_session(client: TestClient) -> None:
     use_gemini(None)
-    response = client.post(path, json=body)
+    response = client.post("/api/generate-prd", json=PRD_REQUEST)
     assert response.status_code == 401
 
 
@@ -48,10 +43,6 @@ def test_guest_prd_quota(guest_client: TestClient) -> None:
         "registeredLimit": config.AI_DAILY_QUOTAS["registered"]["prd"],
         "canUpgradeByRegistering": True,
     }
-
-    # 種別ごとに別カウント
-    use_gemini(FakeGemini(StructuredNote(structured_title="t", structured_content="c")))
-    assert guest_client.post("/api/structure-rough-note", json=STRUCTURE_REQUEST).status_code == 200
 
 
 def test_registered_user_has_higher_quota(guest_client: TestClient, db_admin: psycopg.Connection[Any]) -> None:
@@ -78,9 +69,9 @@ def test_ai_generations_are_recorded(guest_client: TestClient, db_admin: psycopg
     use_gemini(FakeGemini(GeneratedPrd(markdown="# ok")))
     guest_client.post("/api/generate-prd", json=PRD_REQUEST)
     use_gemini(FakeGemini(error=TimeoutError()))
-    guest_client.post("/api/structure-rough-note", json=STRUCTURE_REQUEST)
+    guest_client.post("/api/generate-prd", json=PRD_REQUEST)
     use_gemini(None)
-    guest_client.post("/api/structure-rough-note", json=STRUCTURE_REQUEST)
+    guest_client.post("/api/generate-prd", json=PRD_REQUEST)
 
     rows = db_admin.execute(
         """
@@ -92,8 +83,8 @@ def test_ai_generations_are_recorded(guest_client: TestClient, db_admin: psycopg
     assert sorted(rows, key=str) == sorted(
         [
             ("prd", "strict", "brief", 1, 3, False, None, "fake-model", True, True),
-            ("structure", None, None, None, 5, True, "ai_error:TimeoutError", "fake-model", True, True),
-            ("structure", None, None, None, 5, True, "no_api_key", None, True, True),
+            ("prd", "strict", "brief", 1, 3, True, "ai_error:TimeoutError", "fake-model", True, True),
+            ("prd", "strict", "brief", 1, 3, True, "no_api_key", None, True, True),
         ],
         key=str,
     )

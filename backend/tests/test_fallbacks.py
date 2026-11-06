@@ -8,11 +8,7 @@ import pytest
 
 from backend.app.config import DISPLAY_TIMEZONE
 from backend.app.models.ai import GeneratePrdRequest
-from backend.app.services.fallbacks import (
-    build_rough_note_error_fallback,
-    generate_mock_prd,
-    structure_rough_note_locally,
-)
+from backend.app.services.fallbacks import generate_mock_prd
 
 
 def request(**overrides: object) -> GeneratePrdRequest:
@@ -59,22 +55,6 @@ def test_first_line_without_heading_marks_in_background() -> None:
 def test_created_at_matches_js_locale_format() -> None:
     now = datetime(2026, 1, 5, 9, 3, 7, tzinfo=DISPLAY_TIMEZONE)
     assert "作成日時: **2026/1/5 9:03:07**" in generate_mock_prd(request(), now=now).markdown
-
-
-def test_structure_locally_uses_first_line_and_strips_bullets() -> None:
-    result = structure_rough_note_locally("", "# ログイン\n- メール認証\n• SSO")
-    assert result.structured_title == "ログイン"
-    assert "- [ ] メール認証\n- [ ] SSO" in result.structured_content
-
-
-def test_structure_locally_trims_title() -> None:
-    assert structure_rough_note_locally("  T ", "x").structured_title == "T"
-
-
-def test_error_fallback_wraps_content_with_default_title() -> None:
-    result = build_rough_note_error_fallback(None, "body")
-    assert result.structured_title == "構造化メモ"
-    assert "## 1. 概要\nbody" in result.structured_content
 
 
 def test_header_lines_keep_markdown_hard_breaks() -> None:

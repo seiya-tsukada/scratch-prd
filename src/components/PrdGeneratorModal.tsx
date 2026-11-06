@@ -1,5 +1,17 @@
 import React, { useEffect, useState } from 'react';
-import { Sparkles, X, AlertCircle, Loader2, Layers, ShieldCheck, Lightbulb, Rocket, ChevronDown } from 'lucide-react';
+import {
+  Sparkles,
+  X,
+  AlertCircle,
+  Loader2,
+  Layers,
+  ShieldCheck,
+  Lightbulb,
+  Rocket,
+  ChevronDown,
+  ClipboardPaste,
+  ListChecks,
+} from 'lucide-react';
 import {
   Note,
   Section,
@@ -8,6 +20,7 @@ import {
   PrdDetailLevel,
 } from '../types';
 import { TIMING } from '../config/app';
+import { AI_INPUT_LIMITS } from '../config/api';
 import {
   DEFAULT_DETAIL_LEVEL,
   DEFAULT_GENERATION_MODE,
@@ -17,7 +30,8 @@ import {
   PRD_MODE_META,
   PRD_MODE_ORDER,
 } from '../config/prd';
-import { getNoteDisplayTitle } from '../utils/note';
+import { getFirstLineText, getNoteDisplayTitle } from '../utils/note';
+import { ONBOARDING_EXAMPLE } from '../utils/onboarding';
 import { getPrdInputLimitError } from '../utils/aiLimits';
 import { generationStage } from '../utils/generationStage';
 
@@ -34,6 +48,22 @@ export interface PrdGenerateParams {
   targetPrdId?: string;
 }
 
+/** 貼り付けたテキストから生成する。テキストはメモとして保存してから使う */
+export interface PrdGenerateFromTextParams {
+  title: string;
+  content: string;
+  mode: PrdGenerationMode;
+  detailLevel: PrdDetailLevel;
+}
+
+/** 入力元: notes は既存のメモから、paste は貼り付けたテキストから */
+export type PrdSource = 'notes' | 'paste';
+
+const SOURCE_OPTIONS: { source: PrdSource; label: string; Icon: React.ComponentType<{ className?: string }> }[] = [
+  { source: 'notes', label: 'メモから', Icon: ListChecks },
+  { source: 'paste', label: 'テキストを貼り付け', Icon: ClipboardPaste },
+];
+
 const StepBadge: React.FC<{ step: number }> = ({ step }) => (
   <span className="w-5 h-5 rounded-full bg-indigo-100 dark:bg-indigo-950/60 text-indigo-600 dark:text-indigo-400 text-xs font-bold flex items-center justify-center">
     {step}
@@ -47,8 +77,14 @@ interface PrdGeneratorModalProps {
   existingPrds: PrdDocument[];
   projectName: string;
   defaultTargetPrdId?: string | null;
-  onClose: () => void;
+  /** 開いたときの入力元（再生成のときは常に notes） */
+  initialSource?: PrdSource;
+  /** 初回の案内として開く（見出しと「スキップ」の表示が変わる） */
+  isOnboarding?: boolean;
+  /** generated は生成して閉じたか（false はキャンセル） */
+  onClose: (generated: boolean) => void;
   onGenerate: (params: PrdGenerateParams) => Promise<void>;
+  onGenerateFromText: (params: PrdGenerateFromTextParams) => Promise<void>;
 }
 
 export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
@@ -58,9 +94,14 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
   existingPrds,
   projectName,
   defaultTargetPrdId,
+  initialSource = 'notes',
+  isOnboarding = false,
   onClose,
   onGenerate,
+  onGenerateFromText,
 }) => {
+  const [source, setSource] = useState<PrdSource>('notes');
+  const [rawContent, setRawContent] = useState('');
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [mode, setMode] = useState<PrdGenerationMode>(DEFAULT_GENERATION_MODE);
   const [detailLevel, setDetailLevel] = useState<PrdDetailLevel>(DEFAULT_DETAIL_LEVEL);
@@ -79,6 +120,8 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
     const noteIds = notes.map((n) => n.id);
     const sourceNoteIds = targetPrd ? noteIds.filter((id) => targetPrd.sourceNoteIds?.includes(id)) : [];
 
+    setSource(targetPrd ? 'notes' : initialSource);
+    setRawContent('');
     setSelectedNoteIds(sourceNoteIds.length > 0 ? sourceNoteIds : noteIds);
     setTargetPrdId(targetPrd ? targetPrd.id : NEW_PRD_TARGET);
     setMode(targetPrd?.generationMode || DEFAULT_GENERATION_MODE);
@@ -102,11 +145,29 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
   const selectedNotes = notes.filter((n) => selectedNoteIds.includes(n.id));
   const selectedNotesCount = selectedNotes.length;
   const totalCharacters = selectedNotes.reduce((sum, n) => sum + n.content.length, 0);
-  const limitError = getPrdInputLimitError(selectedNotes);
+  const isPaste = source === 'paste';
+  // 再生成（既存の PRD を更新）は元のメモから作るので、入力元は切り替えられない
+  const isRegenerating = targetPrdId !== NEW_PRD_TARGET;
+  const isPasteOverLimit = rawContent.length > AI_INPUT_LIMITS.MAX_NOTE_CONTENT_CHARS;
+  const limitError = isPaste
+    ? isPasteOverLimit
+      ? `本文は ${AI_INPUT_LIMITS.MAX_NOTE_CONTENT_CHARS.toLocaleString()} 文字までです。`
+      : null
+    : getPrdInputLimitError(selectedNotes);
+  const hasInput = isPaste ? rawContent.trim().length > 0 : selectedNotesCount > 0;
+
+  const handleChangeSource = (next: PrdSource) => {
+    setSource(next);
+    setError(null);
+  };
 
   const handleStartGeneration = async () => {
-    if (selectedNoteIds.length === 0) {
-      setError('PRDを生成するには少なくとも1つのメモを選択してください。');
+    if (!hasInput) {
+      setError(
+        isPaste
+          ? 'PRDを生成するテキストを貼り付けてください。'
+          : 'PRDを生成するには少なくとも1つのメモを選択してください。'
+      );
       return;
     }
     if (limitError) {
@@ -124,13 +185,22 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
     }, TIMING.GENERATION_TIMER_INTERVAL_MS);
 
     try {
-      await onGenerate({
-        selectedNoteIds,
-        mode,
-        detailLevel,
-        targetPrdId: targetPrdId === NEW_PRD_TARGET ? undefined : targetPrdId,
-      });
-      onClose();
+      if (isPaste) {
+        await onGenerateFromText({
+          title: getFirstLineText(rawContent).trim().slice(0, AI_INPUT_LIMITS.MAX_TITLE_CHARS),
+          content: rawContent,
+          mode,
+          detailLevel,
+        });
+      } else {
+        await onGenerate({
+          selectedNoteIds,
+          mode,
+          detailLevel,
+          targetPrdId: isRegenerating ? targetPrdId : undefined,
+        });
+      }
+      onClose(true);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'PRD生成中にエラーが発生しました。もう一度お試しください。');
@@ -154,17 +224,20 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-                AIによるPRD（要件定義書）生成
+                {isOnboarding ? 'ようこそ！ 最初の PRD を作りましょう' : 'AIによるPRD（要件定義書）生成'}
               </h2>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                選択したメモの断片から、実装可能な構造化PRDを自動構築します
+                {isOnboarding
+                  ? '思いつきを書くだけで、AI が開発に使える要件定義書（PRD）にまとめます。'
+                  : 'メモの断片や貼り付けたテキストから、実装可能な構造化PRDを自動構築します'}
               </p>
             </div>
           </div>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => onClose(false)}
             disabled={isGenerating}
+            aria-label="閉じる"
             className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-700 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800"
           >
             <X className="w-4 h-4" />
@@ -180,7 +253,64 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
             </div>
           )}
 
+          {/* 入力元の切り替え（メモから / テキストを貼り付け） */}
+          {!isRegenerating && (
+            <div className="flex items-center p-0.5 rounded-lg bg-zinc-100 dark:bg-zinc-800 w-fit">
+              {SOURCE_OPTIONS.map(({ source: option, label, Icon }) => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => handleChangeSource(option)}
+                  aria-pressed={source === option}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+                    source === option
+                      ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
+                      : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* 1. 貼り付けたテキスト（メモとして保存してから生成に使う） */}
+          {isPaste && (
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div className="flex items-center gap-2">
+                  <StepBadge step={1} />
+                  <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
+                    {isOnboarding
+                      ? '作りたいもの・困っていること・思いついたことを、そのまま書いてください'
+                      : 'テキストを貼り付け（メモとして保存されます）'}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setRawContent(ONBOARDING_EXAMPLE)}
+                  className="flex items-center gap-1 text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline shrink-0"
+                >
+                  <ClipboardPaste className="w-3 h-3" />
+                  <span>例文を使う</span>
+                </button>
+              </div>
+              <textarea
+                autoFocus
+                value={rawContent}
+                onChange={(e) => setRawContent(e.target.value)}
+                placeholder={'例）\n家計簿アプリ\n- レシートを撮るだけで記録したい\n- 月ごとの集計'}
+                className="w-full h-48 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950 text-sm text-zinc-800 dark:text-zinc-200 outline-none resize-none leading-relaxed focus:border-indigo-500"
+              />
+              <div className={`text-right text-[11px] ${isPasteOverLimit ? 'text-rose-600 font-semibold' : 'text-zinc-400'}`}>
+                {rawContent.length.toLocaleString()} / {AI_INPUT_LIMITS.MAX_NOTE_CONTENT_CHARS.toLocaleString()}文字
+              </div>
+            </div>
+          )}
+
           {/* 1. Target Notes Selection */}
+          {!isPaste && (
           <div>
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
@@ -263,6 +393,7 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
               )}
             </div>
           </div>
+          )}
 
           {/* 詳細設定（モード・詳細度・保存先）。閉じている間は選択中の内容を 1 行で示す */}
           <button
@@ -354,7 +485,8 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
               </div>
             </div>
 
-            {/* Target PRD (New or Update Existing) */}
+            {/* Target PRD (New or Update Existing)。貼り付けからは常に新しい PRD */}
+            {!isPaste && (
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <StepBadge step={4} />
@@ -375,6 +507,7 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
                 ))}
               </select>
             </div>
+            )}
           </div>
           </>
           )}
@@ -399,16 +532,16 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => onClose(false)}
               disabled={isGenerating}
               className="px-4 py-2 rounded-lg text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
             >
-              キャンセル
+              {isOnboarding ? 'スキップ' : 'キャンセル'}
             </button>
             <button
               type="button"
               onClick={handleStartGeneration}
-              disabled={isGenerating || selectedNotesCount === 0 || limitError !== null}
+              disabled={isGenerating || !hasInput || limitError !== null}
               className="flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 shadow-md shadow-indigo-500/20 active:scale-[0.98] transition-all cursor-pointer"
             >
               {isGenerating ? (
