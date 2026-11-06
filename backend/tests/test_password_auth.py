@@ -32,10 +32,7 @@ def notes_of(client: TestClient) -> list[str]:
 
 def add_note(client: TestClient, content: str) -> None:
     body = client.get("/api/workspace/bootstrap").json()
-    section = body["data"]["sections"][0]["id"]
-    response = client.post(
-        f"/api/projects/{body['currentProjectId']}/notes", json={"sectionId": section, "content": content}
-    )
+    response = client.post(f"/api/projects/{body['currentProjectId']}/notes", json={"content": content})
     assert response.status_code == 201
 
 

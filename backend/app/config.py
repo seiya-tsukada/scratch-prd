@@ -147,8 +147,11 @@ IMPORT_PATH = "/api/import/local-project"
 
 # 保存できるデータの上限（ゲストによる DB の使いすぎを防ぐ。AI の入力上限とは別）
 MAX_PROJECTS_PER_USER = 100
-MAX_SECTIONS_PER_PROJECT = 50
 MAX_NOTES_PER_PROJECT = 2_000
+# 旧 localStorage データの取り込みで受け付けるセクション数（PRD セクションの判定にだけ使う）
+MAX_LEGACY_SECTIONS = 50
+# 名前がこれに一致するセクションのメモは PRD として扱う（旧データの変換。マイグレーションと同じ規則）
+LEGACY_PRD_SECTION_PATTERN = r"^\s*PRD"
 MAX_PRDS_PER_PROJECT = 200
 MAX_PRD_VERSIONS_PER_PRD = 200
 MAX_NAME_CHARS = 200
@@ -162,8 +165,6 @@ MAX_PRD_SOURCE_NOTES = 200
 MAX_PANES = 4
 DEFAULT_PANE_COUNT = 2
 PANE_IDS = [f"pane-{i}" for i in range(MAX_PANES)]
-# ユーザーが追加したセクションのアイコン（src/config/seed.ts の CUSTOM_SECTION_ICON）
-CUSTOM_SECTION_ICON = "Folder"
 
 # セッション（アクセスのたびに延長する）。ゲストは Cookie を失うとデータに戻れないため長くする
 SESSION_TTL = {"guest": timedelta(days=180), "registered": timedelta(days=30)}

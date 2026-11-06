@@ -12,9 +12,6 @@ export const UNTITLED_SHORT_LABEL = '無題';
 /** メモ一覧などでタイトル代わりに表示する本文の文字数 */
 export const NOTE_LABEL_PREVIEW_LENGTH = 20;
 
-/** 新規メモの保存先として優先するセクション名のキーワード（小文字比較） */
-export const INBOX_SECTION_KEYWORD = 'inbox';
-
 /** 各種タイミング (ms) */
 export const TIMING = {
   NOTE_AUTOSAVE_DEBOUNCE_MS: 300,

@@ -1,12 +1,11 @@
 import React from 'react';
-import { PaneCount, PaneInfo, Note, Section } from '../types';
+import { PaneCount, PaneInfo, Note } from '../types';
 import { NotePane } from './NotePane';
 
 interface WorkspaceProps {
   paneCount: PaneCount;
   panes: PaneInfo[];
   notes: Note[];
-  sections: Section[];
   /** メモ ID ごとの読み直し回数（NotePane の syncKey） */
   noteRevisions: Record<string, number>;
   activePaneId: string;
@@ -15,7 +14,6 @@ interface WorkspaceProps {
   onCreateNoteInPane: (paneIndex: number) => void;
   onUpdateNote: (noteId: string, updates: Partial<Note>) => void;
   onDeleteNote: (noteId: string) => void;
-  onMoveNote: (noteId: string, targetSectionId: string) => void;
 }
 
 /** ペイン数ごとのグリッドレイアウト */
@@ -31,7 +29,6 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   paneCount,
   panes,
   notes,
-  sections,
   noteRevisions,
   activePaneId,
   onActivatePane,
@@ -39,7 +36,6 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   onCreateNoteInPane,
   onUpdateNote,
   onDeleteNote,
-  onMoveNote,
 }) => {
   const activePanes = panes.slice(0, paneCount);
   const gridClass = GRID_CLASSES[paneCount] ?? DEFAULT_GRID_CLASS;
@@ -54,14 +50,12 @@ export const Workspace: React.FC<WorkspaceProps> = ({
               note={notes.find((n) => n.id === pane.noteId) || null}
               syncKey={pane.noteId ? noteRevisions[pane.noteId] : undefined}
               allNotes={notes}
-              sections={sections}
               isActive={activePaneId === pane.id}
               onActivate={() => onActivatePane(pane.id)}
               onSelectNote={(noteId) => onSelectNoteInPane(index, noteId)}
               onCreateNoteInPane={() => onCreateNoteInPane(index)}
               onUpdateNote={onUpdateNote}
               onDeleteNote={onDeleteNote}
-              onMoveNote={onMoveNote}
             />
           </div>
         ))}

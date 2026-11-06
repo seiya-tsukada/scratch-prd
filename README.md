@@ -107,7 +107,7 @@ Git で管理しているのは DB の初期状態だけ:
 | ファイル | 中身 |
 |---|---|
 | `supabase/migrations/*.sql` | スキーマ（テーブル・関数・権限・RLS） |
-| `supabase/seed.sql` | `section_templates`（セクションのひな形）と `sample_contents`（新しいゲストに複製するサンプル） |
+| `supabase/seed.sql` | `sample_contents`（新しいゲストに複製するサンプル） |
 
 データが残るか・消えるか:
 

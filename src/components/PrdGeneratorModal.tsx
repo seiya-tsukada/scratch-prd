@@ -4,7 +4,6 @@ import {
   X,
   AlertCircle,
   Loader2,
-  Layers,
   ShieldCheck,
   Lightbulb,
   Rocket,
@@ -14,7 +13,6 @@ import {
 } from 'lucide-react';
 import {
   Note,
-  Section,
   PrdDocument,
   PrdGenerationMode,
   PrdDetailLevel,
@@ -24,11 +22,11 @@ import { AI_INPUT_LIMITS } from '../config/api';
 import {
   DEFAULT_DETAIL_LEVEL,
   DEFAULT_GENERATION_MODE,
-  NEW_PRD_TARGET,
   PRD_DETAIL_LEVEL_LABELS,
   PRD_DETAIL_LEVEL_ORDER,
   PRD_MODE_META,
   PRD_MODE_ORDER,
+  toGenerationMode,
 } from '../config/prd';
 import { getFirstLineText, getNoteDisplayTitle } from '../utils/note';
 import { ONBOARDING_EXAMPLE } from '../utils/onboarding';
@@ -45,7 +43,8 @@ export interface PrdGenerateParams {
   selectedNoteIds: string[];
   mode: PrdGenerationMode;
   detailLevel: PrdDetailLevel;
-  targetPrdId?: string;
+  /** 既存の PRD をもとに作り直す場合、その PRD（結果は常に新しい PRD として保存する） */
+  basePrdId?: string;
 }
 
 /** 貼り付けたテキストから生成する。テキストはメモとして保存してから使う */
@@ -73,10 +72,10 @@ const StepBadge: React.FC<{ step: number }> = ({ step }) => (
 interface PrdGeneratorModalProps {
   isOpen: boolean;
   notes: Note[];
-  sections: Section[];
   existingPrds: PrdDocument[];
   projectName: string;
-  defaultTargetPrdId?: string | null;
+  /** 既存の PRD から再生成する場合、その PRD の ID（参照メモ・モード・詳細度を引き継ぐ） */
+  basePrdId?: string | null;
   /** 開いたときの入力元（再生成のときは常に notes） */
   initialSource?: PrdSource;
   /** 初回の案内として開く（見出しと「スキップ」の表示が変わる） */
@@ -90,10 +89,9 @@ interface PrdGeneratorModalProps {
 export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
   isOpen,
   notes,
-  sections,
   existingPrds,
   projectName,
-  defaultTargetPrdId,
+  basePrdId,
   initialSource = 'notes',
   isOnboarding = false,
   onClose,
@@ -105,9 +103,8 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
   const [selectedNoteIds, setSelectedNoteIds] = useState<string[]>([]);
   const [mode, setMode] = useState<PrdGenerationMode>(DEFAULT_GENERATION_MODE);
   const [detailLevel, setDetailLevel] = useState<PrdDetailLevel>(DEFAULT_DETAIL_LEVEL);
-  const [targetPrdId, setTargetPrdId] = useState<string>(NEW_PRD_TARGET);
   const [isGenerating, setIsGenerating] = useState(false);
-  // モード・詳細度・保存先は推奨値を選んだ状態で折りたたむ
+  // モード・詳細度は推奨値を選んだ状態で折りたたむ
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [elapsedTime, setElapsedTime] = useState(0);
@@ -116,16 +113,15 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
   // 既存PRDの再生成なら、そのPRDの参照メモ・モード・詳細度を引き継ぐ。
   useEffect(() => {
     if (!isOpen) return;
-    const targetPrd = existingPrds.find((p) => p.id === defaultTargetPrdId);
+    const base = existingPrds.find((p) => p.id === basePrdId);
     const noteIds = notes.map((n) => n.id);
-    const sourceNoteIds = targetPrd ? noteIds.filter((id) => targetPrd.sourceNoteIds?.includes(id)) : [];
+    const sourceNoteIds = base ? noteIds.filter((id) => base.sourceNoteIds?.includes(id)) : [];
 
-    setSource(targetPrd ? 'notes' : initialSource);
+    setSource(base ? 'notes' : initialSource);
     setRawContent('');
     setSelectedNoteIds(sourceNoteIds.length > 0 ? sourceNoteIds : noteIds);
-    setTargetPrdId(targetPrd ? targetPrd.id : NEW_PRD_TARGET);
-    setMode(targetPrd?.generationMode || DEFAULT_GENERATION_MODE);
-    setDetailLevel(targetPrd?.detailLevel || DEFAULT_DETAIL_LEVEL);
+    setMode(base ? toGenerationMode(base.generationMode) : DEFAULT_GENERATION_MODE);
+    setDetailLevel(base?.detailLevel || DEFAULT_DETAIL_LEVEL);
     setShowAdvanced(false);
     setError(null);
   }, [isOpen]);
@@ -146,8 +142,10 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
   const selectedNotesCount = selectedNotes.length;
   const totalCharacters = selectedNotes.reduce((sum, n) => sum + n.content.length, 0);
   const isPaste = source === 'paste';
-  // 再生成（既存の PRD を更新）は元のメモから作るので、入力元は切り替えられない
-  const isRegenerating = targetPrdId !== NEW_PRD_TARGET;
+  // 再生成は元の PRD のメモから作るので、入力元は切り替えられない
+  const basePrd = existingPrds.find((p) => p.id === basePrdId);
+  const isRegenerating = basePrd !== undefined;
+  const sortedNotes = [...notes].sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   const isPasteOverLimit = rawContent.length > AI_INPUT_LIMITS.MAX_NOTE_CONTENT_CHARS;
   const limitError = isPaste
     ? isPasteOverLimit
@@ -197,7 +195,7 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
           selectedNoteIds,
           mode,
           detailLevel,
-          targetPrdId: isRegenerating ? targetPrdId : undefined,
+          basePrdId: basePrd?.id,
         });
       }
       onClose(true);
@@ -345,46 +343,33 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
               </div>
             )}
 
-            <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 max-h-44 overflow-y-auto space-y-3 bg-zinc-50/40 dark:bg-zinc-950/20">
-              {sections.map((sec) => {
-                const secNotes = notes.filter((n) => n.sectionId === sec.id);
-                if (secNotes.length === 0) return null;
+            <div className="border border-zinc-200 dark:border-zinc-800 rounded-xl p-3 max-h-44 overflow-y-auto bg-zinc-50/40 dark:bg-zinc-950/20">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {sortedNotes.map((note) => {
+                  const isSelected = selectedNoteIds.includes(note.id);
+                  const title = getNoteDisplayTitle(note.title, note.content);
 
-                return (
-                  <div key={sec.id} className="space-y-1">
-                    <div className="text-[11px] font-semibold text-zinc-400 px-1 flex items-center gap-1">
-                      <Layers className="w-3 h-3" />
-                      <span>{sec.name}</span>
+                  return (
+                    <div
+                      key={note.id}
+                      onClick={() => toggleNote(note.id)}
+                      className={`flex items-center gap-2 p-2 rounded-lg text-xs cursor-pointer border transition-colors ${
+                        isSelected
+                          ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 text-indigo-900 dark:text-indigo-200 font-medium'
+                          : 'bg-white dark:bg-zinc-800/80 border-zinc-200 dark:border-zinc-700/60 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => {}} // handled by parent onClick
+                        className="rounded border-zinc-300 text-indigo-600 pointer-events-none"
+                      />
+                      <span className="truncate">{title}</span>
                     </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pl-2">
-                      {secNotes.map((note) => {
-                        const isSelected = selectedNoteIds.includes(note.id);
-                        const title = getNoteDisplayTitle(note.title, note.content);
-
-                        return (
-                          <div
-                            key={note.id}
-                            onClick={() => toggleNote(note.id)}
-                            className={`flex items-center gap-2 p-2 rounded-lg text-xs cursor-pointer border transition-colors ${
-                              isSelected
-                                ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 text-indigo-900 dark:text-indigo-200 font-medium'
-                                : 'bg-white dark:bg-zinc-800/80 border-zinc-200 dark:border-zinc-700/60 text-zinc-600 dark:text-zinc-400 hover:border-zinc-300'
-                            }`}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={isSelected}
-                              onChange={() => {}} // handled by parent onClick
-                              className="rounded border-zinc-300 text-indigo-600 pointer-events-none"
-                            />
-                            <span className="truncate">{title}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
+              </div>
 
               {notes.length === 0 && (
                 <div className="text-center py-4 text-xs text-zinc-400">
@@ -395,7 +380,13 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
           </div>
           )}
 
-          {/* 詳細設定（モード・詳細度・保存先）。閉じている間は選択中の内容を 1 行で示す */}
+          {basePrd && (
+            <div className="p-2.5 rounded-lg bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-900 text-[11px] text-indigo-800 dark:text-indigo-300">
+              「{basePrd.title}」をもとに作り直します。結果は新しいPRDとして保存され、元のPRDはそのまま残ります。
+            </div>
+          )}
+
+          {/* 詳細設定（モード・詳細度）。閉じている間は選択中の内容を 1 行で示す */}
           <button
             type="button"
             onClick={() => setShowAdvanced((v) => !v)}
@@ -405,10 +396,7 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
             <span>
               <span className="font-semibold text-zinc-800 dark:text-zinc-200">詳細設定</span>
               <span className="ml-2">
-                {PRD_MODE_META[mode].cardTitle}・{PRD_DETAIL_LEVEL_LABELS[detailLevel]}・
-                {targetPrdId === NEW_PRD_TARGET
-                  ? '新しいPRD'
-                  : `「${existingPrds.find((p) => p.id === targetPrdId)?.title ?? ''}」を更新`}
+                {PRD_MODE_META[mode].cardTitle}・{PRD_DETAIL_LEVEL_LABELS[detailLevel]}
               </span>
             </span>
             <ChevronDown className={`w-4 h-4 shrink-0 transition-transform ${showAdvanced ? 'rotate-180' : ''}`} />
@@ -457,9 +445,8 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
             </div>
           </div>
 
-          {/* 3. Detail Level & Destination */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {/* Detail Level */}
+          {/* 3. Detail Level */}
+          <div>
             <div>
               <div className="flex items-center gap-2 mb-2">
                 <StepBadge step={3} />
@@ -484,30 +471,6 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
                 ))}
               </div>
             </div>
-
-            {/* Target PRD (New or Update Existing)。貼り付けからは常に新しい PRD */}
-            {!isPaste && (
-            <div>
-              <div className="flex items-center gap-2 mb-2">
-                <StepBadge step={4} />
-                <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
-                  保存先
-                </span>
-              </div>
-              <select
-                value={targetPrdId}
-                onChange={(e) => setTargetPrdId(e.target.value)}
-                className="w-full py-2 px-3 text-xs rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 outline-none"
-              >
-                <option value={NEW_PRD_TARGET}>+ 新しいPRDドキュメントとして作成</option>
-                {existingPrds.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    「{p.title}」の新バージョン (v{(p.version || 1) + 1}) として更新
-                  </option>
-                ))}
-              </select>
-            </div>
-            )}
           </div>
           </>
           )}

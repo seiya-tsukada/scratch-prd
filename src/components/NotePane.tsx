@@ -14,10 +14,8 @@ import {
   CheckSquare,
   Quote,
   Code,
-  FolderInput,
-  Folder,
 } from 'lucide-react';
-import { Note, Section } from '../types';
+import { Note } from '../types';
 import { getFirstLineText, getNoteShortLabel } from '../utils/note';
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import { DATE_LOCALE, TIMING, UNTITLED_NOTE_LABEL } from '../config/app';
@@ -51,14 +49,12 @@ interface NotePaneProps {
   paneIndex: number;
   note: Note | null;
   allNotes: Note[];
-  sections: Section[];
   isActive: boolean;
   onActivate: () => void;
   onSelectNote: (noteId: string) => void;
   onCreateNoteInPane: () => void;
   onUpdateNote: (noteId: string, updates: Partial<Note>) => void;
   onDeleteNote: (noteId: string) => void;
-  onMoveNote: (noteId: string, targetSectionId: string) => void;
   /** 変わると入力中の内容をサーバーの値で読み直す（競合時など） */
   syncKey?: number;
 }
@@ -67,19 +63,16 @@ export const NotePane: React.FC<NotePaneProps> = ({
   paneIndex,
   note,
   allNotes,
-  sections,
   isActive,
   onActivate,
   onSelectNote,
   onCreateNoteInPane,
   onUpdateNote,
   onDeleteNote,
-  onMoveNote,
   syncKey = 0,
 }) => {
   const { copied, copy } = useCopyFeedback();
   const [isNoteDropdownOpen, setIsNoteDropdownOpen] = useState(false);
-  const [isSectionDropdownOpen, setIsSectionDropdownOpen] = useState(false);
 
   // Local state for instant typing with debounced save to repository
   const [localTitle, setLocalTitle] = useState(note?.title || '');
@@ -154,8 +147,6 @@ export const NotePane: React.FC<NotePaneProps> = ({
       textarea.setSelectionRange(start + prefix.length, start + replacement.length - suffix.length);
     }, TIMING.EDITOR_REFOCUS_DELAY_MS);
   };
-
-  const currentSection = sections.find((s) => s.id === note?.sectionId);
 
   // Empty state when no note is open in this pane
   if (!note) {
@@ -329,49 +320,6 @@ export const NotePane: React.FC<NotePaneProps> = ({
                       <span>新規メモを作成</span>
                     </button>
                   </div>
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Section badge / selector */}
-          <div className="relative hidden sm:block">
-            <button
-              type="button"
-              onClick={() => setIsSectionDropdownOpen(!isSectionDropdownOpen)}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800/80 hover:bg-zinc-200/80 dark:hover:bg-zinc-700 transition-colors"
-              title="所属セクションを変更"
-            >
-              <Folder className="w-2.5 h-2.5 text-zinc-400" />
-              <span className="max-w-[80px] truncate">{currentSection?.name || '未分類'}</span>
-              <ChevronDown className="w-2.5 h-2.5 text-zinc-400" />
-            </button>
-
-            {isSectionDropdownOpen && (
-              <>
-                <div
-                  className="fixed inset-0 z-30"
-                  onClick={() => setIsSectionDropdownOpen(false)}
-                />
-                <div className="absolute left-0 top-full mt-1 w-44 rounded-lg bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-lg z-40 py-1 text-xs">
-                  {sections.map((s) => (
-                    <button
-                      key={s.id}
-                      type="button"
-                      onClick={() => {
-                        onMoveNote(note.id, s.id);
-                        setIsSectionDropdownOpen(false);
-                      }}
-                      className={`w-full text-left px-3 py-1.5 flex items-center gap-2 ${
-                        s.id === note.sectionId
-                          ? 'bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 font-semibold'
-                          : 'text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800'
-                      }`}
-                    >
-                      <FolderInput className="w-3 h-3 text-zinc-400" />
-                      <span className="truncate">{s.name}</span>
-                    </button>
-                  ))}
                 </div>
               </>
             )}

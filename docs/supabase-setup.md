@@ -61,7 +61,7 @@ DATABASE_URL=postgresql://idea_ws_app.<project-ref>:<password>@aws-0-<region>.po
 - [ ] 次の確認クエリが動くこと（`idea_ws_app` でプーラー経由に接続できること）を確かめる:
 
 ```bash
-psql "$DATABASE_URL" -c "select count(*) from idea_ws.section_templates"   # → 4
+psql "$DATABASE_URL" -c "select count(*) from idea_ws.sample_contents"     # → 1
 psql "$DATABASE_URL" -c "select current_setting('search_path')"            # → idea_ws, extensions
 ```
 
@@ -78,9 +78,8 @@ reset role;
 
 ## 6. コンテンツの更新（デプロイ不要）
 
-サンプルやセクションテンプレートは SQL Editor（`postgres` ロール）で更新する。`idea_ws_app` には読み取り権限しかない。
+サンプルは SQL Editor（`postgres` ロール）で更新する。`idea_ws_app` には読み取り権限しかない。
 
-- セクションテンプレート: `idea_ws.section_templates` の `name` / `icon` / `position` / `is_active` を編集する
 - サンプル: 新しい `version` の行を `is_active = false` で追加 → 既存の有効行を `false` にしてから新しい行を `true` にする（有効な行は 1 件まで）
 - `sample_contents.content` の形式は `supabase/seed.sql` 先頭のコメントを参照
 

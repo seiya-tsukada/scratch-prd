@@ -1,13 +1,15 @@
 """旧 localStorage データ（1 プロジェクト分）を取り込む。
 
 旧 ID はすべて新しい uuid に振り直し、次の参照も書き換える:
-  メモの sectionId / PRD の sourceNoteIds・facts[].sourceNoteId・contradictions[].notesInvolved・versions[] /
-  ペインの noteId。見つからないセクションを指すメモは先頭のセクションに入れる。
+  PRD の sourceNoteIds・facts[].sourceNoteId・contradictions[].notesInvolved・versions[] / ペインの noteId。
+セクションは取り込まない。名前が「PRD」で始まるセクションのメモは PRD に変換し（生成元メモは空、
+生成モードは unknown）、それ以外のメモはそのままメモとして取り込む。
 作成・更新日時は旧データの値を引き継ぐ（無ければ現在時刻）。
 """
 
 from __future__ import annotations
 
+import re
 from typing import Any
 from uuid import UUID
 
@@ -16,7 +18,17 @@ from psycopg.types.json import Jsonb
 from backend.app import config
 from backend.app.db import Conn
 from backend.app.models.workspace import ImportResult, LegacyPrdBody, LegacyProjectImport
-from backend.app.services.workspace_repo import LimitExceededError, create_sections_from_templates
+from backend.app.services.workspace_repo import LimitExceededError
+
+PRD_SECTION = re.compile(config.LEGACY_PRD_SECTION_PATTERN, re.IGNORECASE)
+UNTITLED_PRD_TITLE = "無題のPRD"
+_HEADING_PREFIX = re.compile(r"^#+\s*")
+
+
+def _prd_title(title: str, content: str) -> str:
+    """タイトルが空なら本文の 1 行目（見出し記号を除く）。マイグレーションと同じ規則"""
+    first_line = _HEADING_PREFIX.sub("", content.split("\n")[0], count=1).strip()
+    return (title.strip() or first_line or UNTITLED_PRD_TITLE)[: config.MAX_NAME_CHARS]
 
 
 async def _insert_id(conn: Conn, query: str, params: tuple[Any, ...]) -> UUID:
@@ -65,37 +77,30 @@ async def import_legacy_project(conn: Conn, user_id: UUID, data: LegacyProjectIm
             (user_id, p.name, p.description, p.created_at, p.updated_at),
         )
 
-        section_ids: dict[str, UUID] = {}
-        for s in sorted(data.sections, key=lambda s: s.position):
-            section_ids[s.id] = await _insert_id(
-                conn,
-                """
-                insert into idea_ws.sections (user_id, project_id, name, icon, position, created_at, updated_at)
-                values (%s, %s, %s, %s, %s, coalesce(%s, now()), coalesce(%s, now())) returning id
-                """,
-                (user_id, project_id, s.name, s.icon, len(section_ids), s.created_at, s.updated_at),
-            )
-        if not section_ids and data.notes:
-            await create_sections_from_templates(conn, user_id, project_id)
-        cur = await conn.execute(
-            "select id from idea_ws.sections where user_id = %s and project_id = %s order by position limit 1",
-            (user_id, project_id),
-        )
-        first = await cur.fetchone()
-        fallback_section = UUID(str(first["id"])) if first else None
+        prd_section_ids = {sec.id for sec in data.sections if PRD_SECTION.match(sec.name)}
+        converted_prds = 0
 
         note_ids: dict[str, UUID] = {}
         for n in data.notes:
-            section_id = section_ids.get(n.section_id, fallback_section)
-            assert section_id is not None
+            if n.section_id in prd_section_ids:
+                await conn.execute(
+                    """
+                    insert into idea_ws.prd_documents
+                      (user_id, project_id, title, content, generation_mode, source_note_ids, created_at, updated_at)
+                    values (%s, %s, %s, %s, 'unknown', '{}', coalesce(%s, now()), coalesce(%s, now()))
+                    """,
+                    (user_id, project_id, _prd_title(n.title, n.content), n.content, n.created_at, n.updated_at),
+                )
+                converted_prds += 1
+                continue
             note_ids[n.id] = await _insert_id(
                 conn,
                 """
                 insert into idea_ws.notes
-                  (user_id, project_id, section_id, title, content, position, created_at, updated_at)
-                values (%s, %s, %s, %s, %s, %s, coalesce(%s, now()), coalesce(%s, now())) returning id
+                  (user_id, project_id, title, content, position, created_at, updated_at)
+                values (%s, %s, %s, %s, %s, coalesce(%s, now()), coalesce(%s, now())) returning id
                 """,
-                (user_id, project_id, section_id, n.title, n.content, n.position, n.created_at, n.updated_at),
+                (user_id, project_id, n.title, n.content, n.position, n.created_at, n.updated_at),
             )
 
         for prd in data.prds:
@@ -171,13 +176,8 @@ async def import_legacy_project(conn: Conn, user_id: UUID, data: LegacyProjectIm
                 (user_id, project_id, prefs.pane_count, Jsonb(panes), prefs.active_pane_id),
             )
 
-    cur = await conn.execute(
-        "select count(*) from idea_ws.sections where user_id = %s and project_id = %s", (user_id, project_id)
-    )
-    sections = await cur.fetchone()
     return ImportResult(
         project_id=project_id,
-        sections=int(sections["count"]) if sections else 0,
         notes=len(note_ids),
-        prds=len(data.prds),
+        prds=len(data.prds) + converted_prds,
     )

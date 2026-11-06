@@ -7,22 +7,19 @@ import pytest
 from psycopg import errors
 from psycopg.types.json import Jsonb
 
-from .helpers import create_project, create_section, create_user
+from .helpers import create_project, create_user
 
 
 def test_child_rows_must_belong_to_same_user(app: psycopg.Connection) -> None:
     alice = create_user(app)
     bob = create_user(app)
     alice_project = create_project(app, alice)
-    alice_section = create_section(app, alice, alice_project)
 
-    # 他人のプロジェクトにセクション・メモ・PRD・設定を作れない
-    with pytest.raises(errors.ForeignKeyViolation), app.transaction():
-        create_section(app, bob, alice_project)
+    # 他人のプロジェクトにメモ・PRD・設定を作れない
     with pytest.raises(errors.ForeignKeyViolation), app.transaction():
         app.execute(
-            "insert into idea_ws.notes (user_id, project_id, section_id) values (%s, %s, %s)",
-            (bob, alice_project, alice_section),
+            "insert into idea_ws.notes (user_id, project_id) values (%s, %s)",
+            (bob, alice_project),
         )
     with pytest.raises(errors.ForeignKeyViolation), app.transaction():
         app.execute(
@@ -34,19 +31,6 @@ def test_child_rows_must_belong_to_same_user(app: psycopg.Connection) -> None:
         app.execute(
             "insert into idea_ws.workspace_preferences (user_id, project_id, active_pane_id) values (%s, %s, 'pane-0')",
             (bob, alice_project),
-        )
-
-
-def test_note_section_must_be_in_same_project(app: psycopg.Connection) -> None:
-    user = create_user(app)
-    project_a = create_project(app, user, "A")
-    project_b = create_project(app, user, "B")
-    section_b = create_section(app, user, project_b)
-
-    with pytest.raises(errors.ForeignKeyViolation), app.transaction():
-        app.execute(
-            "insert into idea_ws.notes (user_id, project_id, section_id) values (%s, %s, %s)",
-            (user, project_a, section_b),
         )
 
 
@@ -73,10 +57,9 @@ def test_prd_version_must_belong_to_same_user(app: psycopg.Connection) -> None:
 def test_deleting_user_cascades_user_data_and_keeps_metrics(app: psycopg.Connection) -> None:
     user = create_user(app)
     project = create_project(app, user)
-    section = create_section(app, user, project)
     app.execute(
-        "insert into idea_ws.notes (user_id, project_id, section_id, content) values (%s, %s, %s, 'x')",
-        (user, project, section),
+        "insert into idea_ws.notes (user_id, project_id, content) values (%s, %s, 'x')",
+        (user, project),
     )
     prd = app.execute(
         "insert into idea_ws.prd_documents (user_id, project_id, title, generation_mode) "
@@ -119,7 +102,6 @@ def test_deleting_user_cascades_user_data_and_keeps_metrics(app: psycopg.Connect
 
     for table in [
         "projects",
-        "sections",
         "notes",
         "prd_documents",
         "prd_versions",
@@ -146,10 +128,9 @@ def test_moving_a_project_to_another_user_moves_everything_under_it(app: psycopg
     guest = create_user(app)
     owner = create_user(app, is_guest=False, email="owner@example.com")
     project = create_project(app, guest)
-    section = create_section(app, guest, project)
     app.execute(
-        "insert into idea_ws.notes (user_id, project_id, section_id, content) values (%s, %s, %s, 'x')",
-        (guest, project, section),
+        "insert into idea_ws.notes (user_id, project_id, content) values (%s, %s, 'x')",
+        (guest, project),
     )
     prd = app.execute(
         "insert into idea_ws.prd_documents (user_id, project_id, title, generation_mode) "
@@ -170,7 +151,7 @@ def test_moving_a_project_to_another_user_moves_everything_under_it(app: psycopg
 
     app.execute("update idea_ws.projects set user_id = %s where user_id = %s", (owner, guest))
 
-    for table in ["projects", "sections", "notes", "prd_documents", "prd_versions", "workspace_preferences"]:
+    for table in ["projects", "notes", "prd_documents", "prd_versions", "workspace_preferences"]:
         moved = app.execute(f"select count(*) from idea_ws.{table} where user_id = %s", (owner,)).fetchone()
         left = app.execute(f"select count(*) from idea_ws.{table} where user_id = %s", (guest,)).fetchone()
         assert (moved, left) == ((1,), (0,)), table
@@ -216,9 +197,27 @@ def test_only_one_active_sample(admin: psycopg.Connection) -> None:
         admin.execute("insert into idea_ws.sample_contents (version, is_active, content) values (99, true, '{}')")
 
 
+def test_prd_generation_mode_accepts_unknown(app: psycopg.Connection) -> None:
+    """旧データ（PRD セクションのメモ）から変換した PRD は生成モードが不明（'unknown'）"""
+    user = create_user(app)
+    project = create_project(app, user)
+    prd = app.execute(
+        "insert into idea_ws.prd_documents (user_id, project_id, title, generation_mode) "
+        "values (%s, %s, 'T', 'unknown') returning id",
+        (user, project),
+    ).fetchone()
+    assert prd is not None
+    app.execute(
+        "insert into idea_ws.prd_versions "
+        "(user_id, prd_document_id, version_number, title, content, generation_mode, detail_level) "
+        "values (%s, %s, 1, 'T', '', 'unknown', 'standard')",
+        (user, prd[0]),
+    )
+
+
 @pytest.mark.parametrize(
     ("column", "value"),
-    [("generation_mode", "unknown"), ("detail_level", "huge")],
+    [("generation_mode", "creative"), ("detail_level", "huge")],
 )
 def test_prd_enum_columns_are_checked(app: psycopg.Connection, column: str, value: str) -> None:
     user = create_user(app)

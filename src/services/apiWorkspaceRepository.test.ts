@@ -29,7 +29,6 @@ describe('ApiWorkspaceRepository', () => {
       projects: [],
       currentProjectId: 'p1',
       data: {
-        sections: [],
         notes: [],
         prds: [],
         preferences: { userId: 'u', projectId: 'p1', paneCount: 2, panes: [{ id: 'pane-0' }], activePaneId: 'pane-0' },
@@ -84,7 +83,7 @@ describe('ApiWorkspaceRepository', () => {
     await repo.createPrd('p1', { ...prd, versions: [], userId: 'u' } as typeof prd);
     expect(lastCall(fetchMock)).toMatchObject({ url: '/api/projects/p1/prds', method: 'POST', body: prd });
 
-    await repo.savePrdVersion('prd1', prd);
+    await repo.updatePrd('prd1', prd);
     expect(lastCall(fetchMock)).toMatchObject({ url: '/api/prds/prd1', method: 'PUT', body: prd });
   });
 

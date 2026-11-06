@@ -69,7 +69,7 @@ export const ContradictionList: React.FC<{
   </div>
 );
 
-/** 未決事項への回答欄。回答は「決定事項」セクションのメモとして保存される */
+/** 未決事項への回答欄。回答はタイトルが「決定: 〜」のメモとして保存される */
 export const OpenQuestionAnswer: React.FC<{
   savedAnswer: string | null;
   onSave: (answer: string) => Promise<void>;
@@ -102,7 +102,7 @@ export const OpenQuestionAnswer: React.FC<{
       />
       <div className="flex items-center justify-between gap-2 text-[11px]">
         <span className={error ? 'text-rose-600' : 'text-emerald-600 dark:text-emerald-400'}>
-          {error ?? (savedAnswer && !isDirty ? '回答済み（決定事項に保存）' : '')}
+          {error ?? (savedAnswer && !isDirty ? '回答済み（「決定: 〜」のメモに保存）' : '')}
         </span>
         <button
           type="button"
