@@ -3,14 +3,16 @@ import { AlertCircle, FolderPlus, Loader2, X } from 'lucide-react';
 import { Header } from './components/Header';
 import { Sidebar } from './components/Sidebar';
 import { Workspace } from './components/Workspace';
-import { PrdGeneratorModal, PrdGenerateParams } from './components/PrdGeneratorModal';
-import { StructureRoughNoteModal } from './components/StructureRoughNoteModal';
+import {
+  PrdGeneratorModal,
+  PrdGenerateFromTextParams,
+  PrdGenerateParams,
+} from './components/PrdGeneratorModal';
 import { PrdViewerModal } from './components/PrdViewerModal';
 import { LegacyImportDialog } from './components/LegacyImportDialog';
 import { AuthDialog, AuthMode } from './components/AuthDialog';
 import { AccountDialog } from './components/AccountDialog';
 import { SignupPrompt } from './components/SignupPrompt';
-import { QuickPrdDialog, QuickPrdMode } from './components/QuickPrdDialog';
 import { finishOnboarding } from './services/session';
 import { shouldShowOnboarding } from './utils/onboarding';
 import {
@@ -43,7 +45,7 @@ import {
   createEmptyPanes,
 } from './config/app';
 import { LAST_PROJECT_STORAGE_KEY } from './config/legacyStorage';
-import { DEFAULT_DETAIL_LEVEL, DEFAULT_GENERATION_MODE, getPrdModeMeta } from './config/prd';
+import { getPrdModeMeta } from './config/prd';
 import { Project, Section, Note, PrdDocument, PaneCount, PaneInfo, SaveStatus } from './types';
 
 type LoadState = 'loading' | 'ready' | 'error';
@@ -112,9 +114,11 @@ export default function App() {
   // UI state
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
-  const [isPrdGeneratorOpen, setIsPrdGeneratorOpen] = useState(false);
-  const [isStructureModalOpen, setIsStructureModalOpen] = useState(false);
-  const [generatorTargetPrdId, setGeneratorTargetPrdId] = useState<string | null>(null);
+  // PRD 生成ダイアログ。entry は開き方（ヘッダー・再生成 / 初回の案内）
+  const [prdGenerator, setPrdGenerator] = useState<{
+    entry: 'default' | 'onboarding';
+    targetPrdId: string | null;
+  } | null>(null);
   const [activePrdId, setActivePrdId] = useState<string | null>(null);
   // 直前の PRD 生成が内蔵ジェネレータによるものだった場合に、ビューアで知らせる
   const [prdFallback, setPrdFallback] = useState<{ prdId: string; reason: FallbackReason } | null>(null);
@@ -122,7 +126,6 @@ export default function App() {
   const [authMode, setAuthMode] = useState<AuthMode | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [signupPrompt, setSignupPrompt] = useState<SignupPromptTrigger | null>(null);
-  const [quickPrdMode, setQuickPrdMode] = useState<QuickPrdMode | null>(null);
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   // 同じきっかけで何度も出さない（このページを開いている間）
   const shownPromptTriggers = useRef(new Set<SignupPromptTrigger>());
@@ -285,12 +288,13 @@ export default function App() {
     setNotes((prev) => [note, ...prev]);
   };
 
+  /** 新規メモの保存先（Inbox、無ければ先頭のセクション） */
+  const findInboxSectionId = (): string | undefined =>
+    sections.find((s) => s.name.toLowerCase().includes(INBOX_SECTION_KEYWORD))?.id || sections[0]?.id;
+
   const handleCreateNoteInPane = async (paneIndex: number, sectionId?: string) => {
     if (!currentProject) return;
-    const targetSectionId =
-      sectionId ||
-      sections.find((s) => s.name.toLowerCase().includes(INBOX_SECTION_KEYWORD))?.id ||
-      sections[0]?.id;
+    const targetSectionId = sectionId || findInboxSectionId();
     if (!targetSectionId) {
       setErrorMessage('メモを作成するには、先にセクションを作成してください。');
       return;
@@ -531,9 +535,9 @@ export default function App() {
       params
     );
 
-  // --- 貼るだけ PRD・初回の案内 ---
+  // --- 貼り付けからの PRD 生成・初回の案内 ---
   const showOnboarding =
-    quickPrdMode === null &&
+    prdGenerator === null &&
     shouldShowOnboarding({
       user,
       hasProject: Boolean(currentProject),
@@ -543,7 +547,7 @@ export default function App() {
 
   useEffect(() => {
     if (loadState === 'ready' && showOnboarding) {
-      setQuickPrdMode('onboarding');
+      setPrdGenerator({ entry: 'onboarding', targetPrdId: null });
       track({ name: 'onboarding_started' });
     }
   }, [loadState, showOnboarding]);
@@ -554,26 +558,17 @@ export default function App() {
     finishOnboarding(result).catch((e) => console.warn('案内の状態を保存できませんでした', e));
   };
 
-  const closeQuickPrd = () => {
-    if (quickPrdMode === 'onboarding') endOnboarding('skipped');
-    setQuickPrdMode(null);
-  };
-
-  /** 貼り付けた内容を Inbox のメモにし、そのメモだけから推奨設定で PRD を作る */
-  const handleQuickPrd = async (title: string, content: string, structured: boolean) => {
+  /** 貼り付けた内容を Inbox のメモにし、そのメモだけから PRD を作る */
+  const handleGeneratePrdFromText = async ({ title, content, mode, detailLevel }: PrdGenerateFromTextParams) => {
     if (!currentProject) return;
-    const sectionId =
-      sections.find((s) => s.name.toLowerCase().includes(INBOX_SECTION_KEYWORD))?.id || sections[0]?.id;
+    const sectionId = findInboxSectionId();
     if (!sectionId) throw new Error('メモを保存するセクションがありません。先にセクションを作成してください。');
 
     const note = await workspaceRepository.createNote(currentProject.id, sectionId, title, content);
     addNote(note);
     handleOpenNoteInActivePane(note.id);
-    await generatePrdFromNotes([note], { mode: DEFAULT_GENERATION_MODE, detailLevel: DEFAULT_DETAIL_LEVEL });
-
-    if (quickPrdMode === 'onboarding') endOnboarding('completed');
-    else track({ name: 'quick_prd_used', properties: { structured } });
-    setQuickPrdMode(null);
+    await generatePrdFromNotes([note], { mode, detailLevel });
+    if (prdGenerator?.entry !== 'onboarding') track({ name: 'quick_prd_used' });
   };
 
   const closePrdViewer = () => {
@@ -604,13 +599,12 @@ export default function App() {
   const openPrdGenerator = (targetPrdId: string | null) => {
     // ビューアの上に重ねると操作できないため閉じる（生成後に結果のビューアを開く）
     closePrdViewer();
-    setGeneratorTargetPrdId(targetPrdId);
-    setIsPrdGeneratorOpen(true);
+    setPrdGenerator({ entry: 'default', targetPrdId });
   };
 
-  const closePrdGenerator = () => {
-    setIsPrdGeneratorOpen(false);
-    setGeneratorTargetPrdId(null);
+  const closePrdGenerator = (generated: boolean) => {
+    if (prdGenerator?.entry === 'onboarding') endOnboarding(generated ? 'completed' : 'skipped');
+    setPrdGenerator(null);
   };
 
   // --- 登録の案内（ゲストのみ。閉じたら一定期間は出さない） ---
@@ -650,31 +644,6 @@ export default function App() {
   /** 別のユーザーに切り替わった・セッションが終わったので読み直す（未保存の変更があればブラウザが確認する） */
   const restartApp = () => {
     window.location.reload();
-  };
-
-  // --- Rough note structuring ---
-  const handleStructureNote = (noteId: string) => {
-    const foundPane = panes.find((p) => p.noteId === noteId);
-    if (foundPane) setActivePaneId(foundPane.id);
-    setIsStructureModalOpen(true);
-  };
-
-  const handleApplyStructuredNote = (noteId: string, newTitle: string, newContent: string) => {
-    handleUpdateNote(noteId, { title: newTitle, content: newContent });
-    setNoteRevisions((prev) => ({ ...prev, [noteId]: (prev[noteId] ?? 0) + 1 }));
-  };
-
-  const handleSaveStructuredAsNew = async (sectionId: string, title: string, content: string) => {
-    if (!currentProject) return;
-    const targetSectionId = sectionId || sections[0]?.id;
-    if (!targetSectionId) return;
-    try {
-      const newNote = await workspaceRepository.createNote(currentProject.id, targetSectionId, title, content);
-      addNote(newNote);
-      handleOpenNoteInActivePane(newNote.id);
-    } catch (e) {
-      showError(e);
-    }
   };
 
   // --- 旧 localStorage データの取り込み ---
@@ -795,13 +764,11 @@ export default function App() {
         onRenameProject={handleRenameProject}
         onDeleteProject={handleDeleteProject}
         onChangePaneCount={handleChangePaneCount}
-        onOpenStructureRoughNote={() => setIsStructureModalOpen(true)}
         onOpenPrdGenerator={() => openPrdGenerator(null)}
         onRetrySave={() => saveQueue.retryAll()}
         user={user}
         onOpenAuth={openAuth}
         onOpenAccount={() => setIsAccountOpen(true)}
-        onOpenQuickPrd={() => setQuickPrdMode('quick')}
         onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
       />
 
@@ -837,30 +804,21 @@ export default function App() {
           onUpdateNote={handleUpdateNote}
           onDeleteNote={handleDeleteNote}
           onMoveNote={handleMoveNote}
-          onStructureNote={handleStructureNote}
         />
       </div>
 
-      <StructureRoughNoteModal
-        isOpen={isStructureModalOpen}
-        notes={notes}
-        sections={sections}
-        activeNoteId={activeNoteId}
-        projectName={projectName}
-        onClose={() => setIsStructureModalOpen(false)}
-        onApplyToNote={handleApplyStructuredNote}
-        onSaveAsNewNote={handleSaveStructuredAsNew}
-      />
-
       <PrdGeneratorModal
-        isOpen={isPrdGeneratorOpen}
+        isOpen={prdGenerator !== null}
         notes={notes}
         sections={sections}
         existingPrds={prds}
         projectName={projectName}
-        defaultTargetPrdId={generatorTargetPrdId}
+        defaultTargetPrdId={prdGenerator?.targetPrdId}
+        initialSource={prdGenerator?.entry === 'onboarding' || notes.length === 0 ? 'paste' : 'notes'}
+        isOnboarding={prdGenerator?.entry === 'onboarding'}
         onClose={closePrdGenerator}
         onGenerate={handleGeneratePrd}
+        onGenerateFromText={handleGeneratePrdFromText}
       />
 
       {activePrd && (
@@ -881,16 +839,7 @@ export default function App() {
       {errorBanner}
       {legacyDialog}
 
-      {quickPrdMode && (
-        <QuickPrdDialog
-          mode={quickPrdMode}
-          projectName={projectName}
-          onGenerate={handleQuickPrd}
-          onClose={closeQuickPrd}
-        />
-      )}
-
-      {signupPrompt && !authMode && !quickPrdMode && (
+      {signupPrompt && !authMode && !prdGenerator && (
         <SignupPrompt trigger={signupPrompt} onRegister={() => openAuth('register')} onDismiss={dismissSignupPrompt} />
       )}
 

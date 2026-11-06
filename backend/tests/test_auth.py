@@ -194,7 +194,6 @@ def test_session_touch_is_throttled(client: TestClient, db_admin: psycopg.Connec
     [
         ("/api/auth/guest", {"turnstileToken": "tok"}),
         ("/api/auth/logout", None),
-        ("/api/structure-rough-note", {"content": "x"}),
         ("/api/generate-prd", {"notes": [{"id": "n", "content": "x"}]}),
     ],
 )

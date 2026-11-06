@@ -16,7 +16,6 @@ interface WorkspaceProps {
   onUpdateNote: (noteId: string, updates: Partial<Note>) => void;
   onDeleteNote: (noteId: string) => void;
   onMoveNote: (noteId: string, targetSectionId: string) => void;
-  onStructureNote?: (noteId: string) => void;
 }
 
 /** ペイン数ごとのグリッドレイアウト */
@@ -41,7 +40,6 @@ export const Workspace: React.FC<WorkspaceProps> = ({
   onUpdateNote,
   onDeleteNote,
   onMoveNote,
-  onStructureNote,
 }) => {
   const activePanes = panes.slice(0, paneCount);
   const gridClass = GRID_CLASSES[paneCount] ?? DEFAULT_GRID_CLASS;
@@ -64,7 +62,6 @@ export const Workspace: React.FC<WorkspaceProps> = ({
               onUpdateNote={onUpdateNote}
               onDeleteNote={onDeleteNote}
               onMoveNote={onMoveNote}
-              onStructureNote={onStructureNote}
             />
           </div>
         ))}

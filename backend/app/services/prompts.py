@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from backend.app.config import DEFAULT_PROJECT_NAME
 from backend.app.models.ai import (
     DEFAULT_DETAIL_LEVEL,
     DEFAULT_GENERATION_MODE,
@@ -10,7 +9,6 @@ from backend.app.models.ai import (
     PrdDetailLevel,
     PrdGenerationMode,
     PreviousPrd,
-    StructureRoughNoteRequest,
 )
 
 # 生成モードごとの AI への指示
@@ -29,40 +27,6 @@ DETAIL_INSTRUCTIONS: dict[PrdDetailLevel, str] = {
     "standard": "実践的で明確な標準PRD",
     "detailed": "詳細な開発仕様PRD",
 }
-
-
-def build_structure_rough_note_prompt(request: StructureRoughNoteRequest) -> str:
-    """殴り書きメモを PRD 風 Markdown に整形するプロンプト"""
-    return f'''You are a product manager specializing in transforming rough, messy scribbles into clean PRD-style markdown notes.
-
-Project: {request.project_name or DEFAULT_PROJECT_NAME}
-Raw scribble title: {request.title or "(無題)"}
-Raw scribble content:
-"""
-{request.content}
-"""
-
-Instructions:
-1. Restructure this rough memo into a clean, concise, PRD-like Markdown document in Japanese.
-2. Structure format:
-# [Clear Short Title]
-## 1. 概要 (Overview)
-- Concise 1-2 sentence summary.
-## 2. 課題とユーザー (Problem & Users)
-- Bullet points of user pain points and target.
-## 3. 主要要件 (Key Requirements)
-- [ ] Bullet list of concrete, testable requirements (using checklist format - [ ]).
-## 4. 実装・UIアイデア (Implementation Notes)
-- Key technical, interaction, or architectural notes.
-## 5. 未決事項 (Open Questions)
-- Bullet points of things needing user confirmation.
-
-Do not invent unnecessary complex requirements; extract and sharpen the user's rough thoughts into actionable specifications.
-Output strictly valid JSON with this format:
-{{
-  "structuredTitle": "Clear Short Title",
-  "structuredContent": "Complete formatted Markdown string"
-}}'''
 
 
 CONTRADICTION_RULES = """Contradictions:

@@ -13,10 +13,8 @@ import {
   Menu,
   ChevronDown,
   Edit2,
-  Wand2,
   ShieldCheck,
   UserCircle2,
-  ClipboardPaste,
 } from 'lucide-react';
 import { Project, PaneCount, SaveStatus } from '../types';
 import type { SessionUser } from '../config/api';
@@ -75,15 +73,12 @@ interface HeaderProps {
   onRenameProject: (newName: string) => void;
   onDeleteProject: (projectId: string) => void;
   onChangePaneCount: (count: PaneCount) => void;
-  onOpenStructureRoughNote: () => void;
   onOpenPrdGenerator: () => void;
   /** 保存に失敗したメモをもう一度保存する */
   onRetrySave: () => void;
   user: SessionUser;
   onOpenAuth: (mode: AuthMode) => void;
   onOpenAccount: () => void;
-  /** 貼るだけ PRD */
-  onOpenQuickPrd: () => void;
   onToggleSidebar: () => void;
 }
 
@@ -99,13 +94,11 @@ export const Header: React.FC<HeaderProps> = ({
   onRenameProject,
   onDeleteProject,
   onChangePaneCount,
-  onOpenStructureRoughNote,
   onOpenPrdGenerator,
   onRetrySave,
   user,
   onOpenAuth,
   onOpenAccount,
-  onOpenQuickPrd,
   onToggleSidebar,
 }) => {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
@@ -277,35 +270,12 @@ export const Header: React.FC<HeaderProps> = ({
           ))}
         </div>
 
-        {/* 貼るだけ PRD: ワークスペースを知らなくても、貼り付けるだけで PRD を作れる入口 */}
-        <button
-          type="button"
-          onClick={onOpenQuickPrd}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 border border-indigo-200 dark:border-indigo-800"
-          title="メモを貼り付けるだけで PRD を作る"
-        >
-          <ClipboardPaste className="w-3.5 h-3.5" />
-          <span>貼るだけPRD</span>
-        </button>
-
-        {/* Action 1: 殴り書きをPRD構造化テキストに修正 */}
-        <button
-          type="button"
-          onClick={onOpenStructureRoughNote}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap text-amber-900 dark:text-amber-200 bg-amber-100/90 dark:bg-amber-950/70 hover:bg-amber-200 dark:hover:bg-amber-900/80 border border-amber-300/80 dark:border-amber-800/80 shadow-2xs active:scale-[0.98] transition-all cursor-pointer"
-          title="殴り書きのメモをPRD形式の構造化テキストに即時整形"
-        >
-          <Wand2 className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
-          <span className="hidden xl:inline">殴り書きを</span>
-          <span>構造化</span>
-        </button>
-
-        {/* Action 2: PRD生成 (既存) */}
+        {/* PRD生成: メモから / 貼り付けたテキストから（ダイアログ内で切り替え） */}
         <button
           type="button"
           onClick={onOpenPrdGenerator}
           className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap text-white bg-gradient-to-r from-indigo-600 via-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 shadow-xs shadow-indigo-500/20 active:scale-[0.98] transition-all cursor-pointer"
-          title="複数メモを横断して本格的なPRD仕様書を高速生成"
+          title="メモや貼り付けたテキストからPRD仕様書を生成"
         >
           <Sparkles className="w-3.5 h-3.5" />
           <span>PRD生成</span>

@@ -1,4 +1,4 @@
-"""AI 機能: 殴り書きの整形と PRD 生成。AI が使えないときは内蔵ジェネレータで応答し、usedFallback で明示する。
+"""AI 機能: PRD 生成。AI が使えないときは内蔵ジェネレータで応答し、usedFallback で明示する。
 ログイン（ゲスト可）必須。Gemini を呼ぶときだけ日次クォータを消費し、すべての生成を ai_generations に記録する"""
 
 from __future__ import annotations
@@ -19,15 +19,12 @@ from backend.app.models.ai import (
     GeneratedPrd,
     GeneratePrdRequest,
     GeneratePrdResponse,
-    StructuredNote,
-    StructureRoughNoteRequest,
-    StructureRoughNoteResponse,
 )
 from backend.app.services import fallbacks
 from backend.app.services.ai_usage import AiGenerationRecord, record_ai_generation
 from backend.app.services.events import record_event
 from backend.app.services.gemini import GeminiClient, get_gemini_client
-from backend.app.services.prompts import build_generate_prd_prompt, build_structure_rough_note_prompt
+from backend.app.services.prompts import build_generate_prd_prompt
 from backend.app.services.rate_limit import ai_quota_limit, consume_quota
 from backend.app.sessions import CurrentUser, SessionUser
 
@@ -84,62 +81,6 @@ async def call_gemini[T: BaseModel](
 
 def elapsed_ms(started: float) -> int:
     return int((time.monotonic() - started) * 1000)
-
-
-@router.post("/structure-rough-note", response_model_exclude_none=True)
-async def structure_rough_note(
-    request: StructureRoughNoteRequest, user: CurrentUser, pool: Pool, gemini: Gemini
-) -> StructureRoughNoteResponse:
-    """殴り書きメモを PRD 風の構造化テキストに整形する"""
-    if gemini is not None:
-        async with pool.connection() as db:
-            await ensure_quota(db, user, "structure")
-
-    started = time.monotonic()
-    outcome = await call_gemini(
-        gemini,
-        lambda g: g.generate(build_structure_rough_note_prompt(request), StructuredNote),
-        lambda r: bool(r.structured_content),
-        "structure-rough-note",
-    )
-
-    if outcome.result is not None:
-        response = StructureRoughNoteResponse(
-            structured_title=outcome.result.structured_title or request.title or fallbacks.DEFAULT_STRUCTURED_TITLE,
-            structured_content=outcome.result.structured_content,
-            used_fallback=False,
-        )
-    else:
-        # キー未設定なら行を見出しに割り振り、AI 失敗時は作業を止めないよう最低限の構造で返す
-        note = (
-            fallbacks.structure_rough_note_locally(request.title, request.content)
-            if outcome.fallback_reason == "no_api_key"
-            else fallbacks.build_rough_note_error_fallback(request.title, request.content)
-        )
-        response = StructureRoughNoteResponse(
-            **note.model_dump(), used_fallback=True, fallback_reason=outcome.fallback_reason
-        )
-
-    await record_ai_generation(
-        pool,
-        AiGenerationRecord(
-            user_id=user.user_id,
-            kind="structure",
-            input_chars=len(request.content),
-            latency_ms=elapsed_ms(started),
-            used_fallback=response.used_fallback,
-            error_type=outcome.error_type,
-            model=gemini.model if gemini else None,
-        ),
-    )
-    await record_event(
-        pool,
-        user.user_id,
-        "rough_note_structured",
-        {"usedFallback": response.used_fallback},
-        session_id=user.session_id,
-    )
-    return response
 
 
 @router.post("/generate-prd", response_model_exclude_none=True)

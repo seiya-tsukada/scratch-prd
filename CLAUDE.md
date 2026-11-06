@@ -181,7 +181,7 @@ Workspace API（Phase 4a〜）:
 - モック（`backend/app/mock/`。DB に接続せず固定のサンプルを返す）は Supabase を用意するまでの一時的な仕組み。`MOCK_BACKEND=true`、または Vercel 上で `DATABASE_URL` が未設定のとき自動で有効になる（`config.Settings.use_mock`。`check:bundle` も同じ規則）。
 - 環境変数を足したら `docs/deploy.md` の表と `.env.example` を更新する。
 - `VERCEL_ENV=production` では `config.Settings` がローカル用の値（localhost の DB・テスト用 Turnstile キー・短い pepper・`COOKIE_SECURE=false` など）を拒否して起動しない。`check:bundle` も本番ビルドにテスト用サイトキーがあれば失敗する。
-- 初回の案内と「貼るだけ PRD」は `QuickPrdDialog` を共有する（Phase 7）。PRD 生成は `App.tsx` の `generatePrdFromNotes` に集約している。
+- PRD 生成の入口は `PrdGeneratorModal` だけ（入力元は「メモから」と「テキストを貼り付け」。貼り付けた内容は Inbox のメモにしてから使う）。初回の案内も同じダイアログを `isOnboarding` で開く。PRD 生成は `App.tsx` の `generatePrdFromNotes` に集約している。殴り書きの整形（`/api/structure-rough-note`）は廃止した（PRD 生成のプロンプトが整形を兼ねる）。
 - 再生成では PRD 本文を AI に渡さず、`src/utils/prdLoop.ts` の `buildPreviousPrd` で作った要約（`previousPrd`）を渡す。未決事項への回答は「決定事項」セクションのメモで、タイトルの形式（`decisionTitle`）で回答済みを判定している（Phase 8）。サーバー側の秘密は `scripts/check-bundle-secrets.mjs` の `SERVER_ONLY_ENV` にも足す。
 
 AI（Phase 2〜）:

@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from backend.app import config
 from backend.app.main import app
-from backend.app.models.ai import GeneratedPrd, StructuredNote
+from backend.app.models.ai import CamelModel, GeneratedPrd
 from backend.app.services.gemini import get_gemini_client, parse_structured
 
 
@@ -141,71 +141,14 @@ def test_generate_prd_accepts_input_at_limits(client: TestClient) -> None:
     assert response.status_code == 200
 
 
-# ---------------------------------------------------------------- structure-rough-note
-
-
-def test_structure_success(client: TestClient) -> None:
-    use_gemini(FakeGemini(StructuredNote(structured_title="AI title", structured_content="# AI")))
-
-    body = client.post("/api/structure-rough-note", json={"title": "t", "content": "memo"}).json()
-
-    assert body == {"structuredTitle": "AI title", "structuredContent": "# AI", "usedFallback": False}
-
-
-def test_structure_success_without_title_uses_request_title(client: TestClient) -> None:
-    use_gemini(FakeGemini(StructuredNote(structured_title="", structured_content="# AI")))
-    body = client.post("/api/structure-rough-note", json={"title": "mine", "content": "memo"}).json()
-    assert body["structuredTitle"] == "mine"
-
-
-def test_structure_without_api_key_uses_local_structuring(client: TestClient) -> None:
-    use_gemini(None)
-    body = client.post("/api/structure-rough-note", json={"content": "# ログイン\n- メール認証"}).json()
-    assert body["structuredTitle"] == "ログイン"
-    assert body["usedFallback"] is True
-    assert body["fallbackReason"] == "no_api_key"
-
-
-@pytest.mark.parametrize(
-    ("gemini", "reason"),
-    [
-        (FakeGemini(error=RuntimeError("boom")), "ai_error"),
-        (FakeGemini(None), "invalid_response"),
-        (FakeGemini(StructuredNote(structured_title="t", structured_content="")), "invalid_response"),
-    ],
-)
-def test_structure_ai_failure_uses_error_fallback(client: TestClient, gemini: FakeGemini, reason: str) -> None:
-    use_gemini(gemini)
-    body = client.post("/api/structure-rough-note", json={"content": "body"}).json()
-    assert body["structuredTitle"] == "構造化メモ"
-    assert "## 1. 概要\nbody" in body["structuredContent"]
-    assert body["usedFallback"] is True
-    assert body["fallbackReason"] == reason
-
-
-@pytest.mark.parametrize(
-    "payload",
-    [
-        {"content": ""},
-        {"content": "   \n"},
-        {"content": "x" * (config.MAX_ROUGH_NOTE_CHARS + 1)},
-        {"content": "x", "title": "t" * (config.MAX_TITLE_CHARS + 1)},
-        {},
-    ],
-)
-def test_structure_rejects_invalid_input(client: TestClient, payload: dict[str, Any]) -> None:
-    use_gemini(FakeGemini(StructuredNote(structured_title="t", structured_content="c")))
-    assert client.post("/api/structure-rough-note", json=payload).status_code == 422
-
-
 # ---------------------------------------------------------------- その他
 
 
 def test_request_too_large_is_rejected(client: TestClient) -> None:
     use_gemini(None)
     response = client.post(
-        "/api/structure-rough-note",
-        content=b'{"content": "' + b"x" * config.MAX_REQUEST_BYTES + b'"}',
+        "/api/generate-prd",
+        content=b'{"projectName": "' + b"x" * config.MAX_REQUEST_BYTES + b'"}',
         headers={"content-type": "application/json"},
     )
     assert response.status_code == 413
@@ -217,6 +160,13 @@ def test_health(client: TestClient) -> None:
 
 
 # ---------------------------------------------------------------- parse_structured
+
+
+class StructuredNote(CamelModel):
+    """parse_structured の検証用スキーマ"""
+
+    structured_title: str
+    structured_content: str
 
 
 def test_parse_structured_prefers_sdk_parsed_value() -> None:

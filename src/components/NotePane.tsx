@@ -5,9 +5,6 @@ import {
   Check,
   Trash2,
   ChevronDown,
-  Eye,
-  Edit3,
-  Columns,
   Plus,
   Bold,
   Italic,
@@ -19,26 +16,11 @@ import {
   Code,
   FolderInput,
   Folder,
-  Wand2,
 } from 'lucide-react';
 import { Note, Section } from '../types';
-import { MarkdownRenderer } from '../utils/markdown';
 import { getFirstLineText, getNoteShortLabel } from '../utils/note';
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import { DATE_LOCALE, TIMING, UNTITLED_NOTE_LABEL } from '../config/app';
-
-type ViewMode = 'edit' | 'preview' | 'split';
-
-const VIEW_MODE_OPTIONS: {
-  mode: ViewMode;
-  title: string;
-  hideOnMobile: boolean;
-  Icon: React.ComponentType<{ className?: string }>;
-}[] = [
-  { mode: 'edit', title: 'エディタ', hideOnMobile: false, Icon: Edit3 },
-  { mode: 'split', title: '編集とプレビューを分割', hideOnMobile: true, Icon: Columns },
-  { mode: 'preview', title: 'プレビュー', hideOnMobile: false, Icon: Eye },
-];
 
 /** 書式ツールバー。'divider' は区切り線 */
 const FORMATTING_ACTIONS: (
@@ -77,7 +59,6 @@ interface NotePaneProps {
   onUpdateNote: (noteId: string, updates: Partial<Note>) => void;
   onDeleteNote: (noteId: string) => void;
   onMoveNote: (noteId: string, targetSectionId: string) => void;
-  onStructureNote?: (noteId: string) => void;
   /** 変わると入力中の内容をサーバーの値で読み直す（競合時など） */
   syncKey?: number;
 }
@@ -94,10 +75,8 @@ export const NotePane: React.FC<NotePaneProps> = ({
   onUpdateNote,
   onDeleteNote,
   onMoveNote,
-  onStructureNote,
   syncKey = 0,
 }) => {
-  const [viewMode, setViewMode] = useState<ViewMode>('edit');
   const { copied, copy } = useCopyFeedback();
   const [isNoteDropdownOpen, setIsNoteDropdownOpen] = useState(false);
   const [isSectionDropdownOpen, setIsSectionDropdownOpen] = useState(false);
@@ -276,8 +255,6 @@ export const NotePane: React.FC<NotePaneProps> = ({
     );
   }
 
-  const isEditorVisible = viewMode === 'edit' || viewMode === 'split';
-  const isPreviewVisible = viewMode === 'preview' || viewMode === 'split';
   const charCount = localContent.length;
   const wordCount = localContent.trim() ? localContent.trim().split(/\s+/).length : 0;
 
@@ -401,39 +378,8 @@ export const NotePane: React.FC<NotePaneProps> = ({
           </div>
         </div>
 
-        {/* Right: View mode toggles & Actions */}
+        {/* Right: Actions */}
         <div className="flex items-center gap-1 shrink-0">
-          {/* Edit / Split / Preview */}
-          <div className="flex items-center p-0.5 rounded bg-zinc-200/60 dark:bg-zinc-800">
-            {VIEW_MODE_OPTIONS.map(({ mode, title, hideOnMobile, Icon }) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setViewMode(mode)}
-                className={`${hideOnMobile ? 'hidden md:block ' : ''}p-1 rounded text-[10px] font-medium transition-colors ${
-                  viewMode === mode
-                    ? 'bg-white dark:bg-zinc-700 text-indigo-600 dark:text-indigo-400 shadow-xs'
-                    : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
-                }`}
-                title={title}
-              >
-                <Icon className="w-3 h-3" />
-              </button>
-            ))}
-          </div>
-
-          {/* Quick Structure Rough Note */}
-          {onStructureNote && (
-            <button
-              type="button"
-              onClick={() => onStructureNote(note.id)}
-              className="p-1 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 rounded hover:bg-amber-100/60 dark:hover:bg-amber-950/40 transition-colors"
-              title="このメモの殴り書きをPRD構造化テキストに変換"
-            >
-              <Wand2 className="w-3.5 h-3.5" />
-            </button>
-          )}
-
           {/* Copy button */}
           <button
             type="button"
@@ -471,53 +417,34 @@ export const NotePane: React.FC<NotePaneProps> = ({
         />
       </div>
 
-      {/* Formatting Toolbar (shown when in edit or split mode) */}
-      {isEditorVisible && (
-        <div className="px-3 py-1 border-b border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-900/40 flex items-center gap-1 text-zinc-500 overflow-x-auto">
-          {FORMATTING_ACTIONS.map((action, index) =>
-            action === 'divider' ? (
-              <div key={`divider-${index}`} className="w-px h-3 bg-zinc-200 dark:bg-zinc-700 mx-0.5" />
-            ) : (
-              <button
-                key={action.title}
-                type="button"
-                onClick={() => insertFormatting(action.prefix, action.suffix)}
-                className="p-1 hover:text-zinc-900 dark:hover:text-zinc-100 rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-800"
-                title={action.title}
-              >
-                <action.Icon className="w-3 h-3" />
-              </button>
-            )
-          )}
-        </div>
-      )}
-
-      {/* Editor & Preview Area */}
-      <div className="flex-1 min-h-0 flex overflow-hidden">
-        {/* Editor Area */}
-        {isEditorVisible && (
-          <div className="flex-1 flex flex-col min-w-0 h-full p-3 overflow-hidden">
-            <textarea
-              ref={textareaRef}
-              value={localContent}
-              onChange={(e) => handleContentChange(e.target.value)}
-              placeholder="思いついたことを自由に書いてください... (Markdown記法をサポート)"
-              className="w-full flex-1 resize-none bg-transparent border-none outline-none text-xs sm:text-sm font-sans text-zinc-800 dark:text-zinc-200 leading-relaxed placeholder-zinc-400 overflow-y-auto"
-            />
-          </div>
+      {/* Formatting Toolbar */}
+      <div className="px-3 py-1 border-b border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-900/40 flex items-center gap-1 text-zinc-500 overflow-x-auto">
+        {FORMATTING_ACTIONS.map((action, index) =>
+          action === 'divider' ? (
+            <div key={`divider-${index}`} className="w-px h-3 bg-zinc-200 dark:bg-zinc-700 mx-0.5" />
+          ) : (
+            <button
+              key={action.title}
+              type="button"
+              onClick={() => insertFormatting(action.prefix, action.suffix)}
+              className="p-1 hover:text-zinc-900 dark:hover:text-zinc-100 rounded hover:bg-zinc-200/50 dark:hover:bg-zinc-800"
+              title={action.title}
+            >
+              <action.Icon className="w-3 h-3" />
+            </button>
+          )
         )}
+      </div>
 
-        {/* Divider if split */}
-        {viewMode === 'split' && (
-          <div className="w-px bg-zinc-200 dark:bg-zinc-800 shrink-0" />
-        )}
-
-        {/* Preview Area */}
-        {isPreviewVisible && (
-          <div className="flex-1 min-w-0 h-full p-4 overflow-y-auto bg-zinc-50/30 dark:bg-zinc-950/20">
-            <MarkdownRenderer content={localContent} />
-          </div>
-        )}
+      {/* Editor Area */}
+      <div className="flex-1 min-h-0 flex flex-col p-3 overflow-hidden">
+        <textarea
+          ref={textareaRef}
+          value={localContent}
+          onChange={(e) => handleContentChange(e.target.value)}
+          placeholder="思いついたことを自由に書いてください... (Markdown記法をサポート)"
+          className="w-full flex-1 resize-none bg-transparent border-none outline-none text-xs sm:text-sm font-sans text-zinc-800 dark:text-zinc-200 leading-relaxed placeholder-zinc-400 overflow-y-auto"
+        />
       </div>
 
       {/* Pane Bottom Status Bar */}

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from backend.app.models.ai import GeneratePrdRequest, PrdNoteInput, StructureRoughNoteRequest
-from backend.app.services.prompts import build_generate_prd_prompt, build_structure_rough_note_prompt
+from backend.app.models.ai import GeneratePrdRequest, PrdNoteInput
+from backend.app.services.prompts import build_generate_prd_prompt
 
 
 def base_request(**overrides: object) -> GeneratePrdRequest:
@@ -68,10 +68,3 @@ def test_previous_prd_empty_lists_are_marked() -> None:
     prompt = build_generate_prd_prompt(base_request(previous_prd={"title": ""}))
     assert "This is a regeneration of an existing PRD. Previous PRD summary:" in prompt
     assert prompt.count("- (なし)") == 4
-
-
-def test_structure_prompt_uses_defaults() -> None:
-    prompt = build_structure_rough_note_prompt(StructureRoughNoteRequest(content="memo"))
-    assert "Project: Idea Workspace" in prompt
-    assert "Raw scribble title: (無題)" in prompt
-    assert '"""\nmemo\n"""' in prompt

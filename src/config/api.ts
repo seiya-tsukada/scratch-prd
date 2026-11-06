@@ -16,7 +16,6 @@ export const AI_INPUT_LIMITS = {
   MAX_NOTES: 50,
   MAX_NOTE_CONTENT_CHARS: 20_000,
   MAX_TOTAL_NOTE_CHARS: 100_000,
-  MAX_ROUGH_NOTE_CHARS: 20_000,
   MAX_TITLE_CHARS: 200,
   MAX_PREVIOUS_ITEMS: 100,
   MAX_PREVIOUS_ITEM_CHARS: 1_000,
@@ -39,7 +38,6 @@ export interface AiResultMeta {
 
 export const API_ENDPOINTS = {
   GENERATE_PRD: '/api/generate-prd',
-  STRUCTURE_ROUGH_NOTE: '/api/structure-rough-note',
   HEALTH: '/api/health',
   AUTH_GUEST: '/api/auth/guest',
   AUTH_ME: '/api/auth/me',
@@ -107,7 +105,7 @@ export type ApiErrorCode =
 
 export interface QuotaExceededDetail {
   code: 'quota_exceeded';
-  kind: 'structure' | 'prd';
+  kind: 'prd';
   limit: number;
   registeredLimit: number;
   canUpgradeByRegistering: boolean;
@@ -146,15 +144,4 @@ export interface GeneratePrdResponse extends AiResultMeta {
   openQuestions: PrdOpenQuestion[];
   contradictions: PrdContradiction[];
   sourceNoteIds: string[];
-}
-
-export interface StructureRoughNoteRequest {
-  title?: string;
-  content: string;
-  projectName?: string;
-}
-
-export interface StructureRoughNoteResponse extends AiResultMeta {
-  structuredTitle: string;
-  structuredContent: string;
 }

@@ -58,7 +58,7 @@ def test_login_uses_the_accounts_onboarding_state(guest_client: TestClient, make
 
 def test_client_onboarding_events_are_accepted(guest_client: TestClient) -> None:
     assert guest_client.post("/api/events", json={"name": "onboarding_started"}).status_code == 204
-    ok = guest_client.post("/api/events", json={"name": "quick_prd_used", "properties": {"structured": True}})
+    ok = guest_client.post("/api/events", json={"name": "quick_prd_used", "properties": {}})
     assert ok.status_code == 204
     # 完了・スキップはサーバー側でのみ記録する
     assert guest_client.post("/api/events", json={"name": "onboarding_completed"}).status_code == 422

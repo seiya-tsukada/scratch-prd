@@ -14,12 +14,8 @@ from backend.app.models.ai import (
     PrdGenerationMode,
     PrdOpenQuestion,
     PrdProposal,
-    StructuredNote,
 )
 
-DEFAULT_ROUGH_NOTE_HEADING = "機能アイデア仕様"
-DEFAULT_STRUCTURED_TITLE = "構造化PRDメモ"
-ERROR_FALLBACK_TITLE = "構造化メモ"
 FALLBACK_PRD_MARKDOWN = "# 生成されたPRD\n\n内容を生成しました。"
 
 # Markdown の強制改行（行末の半角スペース 2 つ）。エディタに消されないよう定数にしている
@@ -88,15 +84,10 @@ MOCK_OPEN_QUESTIONS = [
 ]
 
 _HEADING_PREFIX = re.compile(r"^#+\s*")
-_BULLET_PREFIX = re.compile(r"^[-*•]\s*")
 
 
 def _first_line_of(content: str) -> str:
     return _HEADING_PREFIX.sub("", content.split("\n")[0], count=1)
-
-
-def _strip_bullet(line: str) -> str:
-    return _BULLET_PREFIX.sub("", line, count=1)
 
 
 def _format_datetime(value: datetime) -> str:
@@ -225,41 +216,3 @@ def generate_mock_prd(request: GeneratePrdRequest, *, now: datetime | None = Non
         open_questions=open_questions,
         contradictions=[],
     )
-
-
-def structure_rough_note_locally(title: str | None, content: str) -> StructuredNote:
-    """キー未設定時に、メモの行をそのまま PRD 形式の見出しへ割り振る"""
-    lines = [line for line in content.strip().split("\n") if line]
-    heading = (title or "").strip() or (_HEADING_PREFIX.sub("", lines[0], count=1) if lines else "")
-    heading = heading or DEFAULT_ROUGH_NOTE_HEADING
-    problem_lines = "\n- ".join(_strip_bullet(line) for line in lines[:3])
-    requirement_lines = "\n- [ ] ".join(_strip_bullet(line) for line in lines)
-
-    structured_content = f"""# {heading}
-
-## 1. 概要 (Overview)
-{" ".join(lines[:2])}
-
-## 2. 解決する課題・背景 (Problem & Context)
-- {problem_lines}
-
-## 3. 主要要件・コア仕様 (Key Requirements)
-- [ ] {requirement_lines}
-
-## 4. UI / 実装メモ (Implementation Ideas)
-- 思考の断片から抽出された要件を実装ベースに落とし込む
-- 不要な複雑さを避け、MVPスコープに収める
-
-## 5. 未解決事項・メモ (Open Questions)
-- ❓ 具体的な受け入れ基準・エッジケースの確認が必要"""
-
-    return StructuredNote(structured_title=heading, structured_content=structured_content)
-
-
-def build_rough_note_error_fallback(title: str | None, content: str) -> StructuredNote:
-    """AI 呼び出しが失敗したときに最低限の構造で返す"""
-    fallback_title = title or ERROR_FALLBACK_TITLE
-    fallback_content = (
-        f"# {fallback_title}\n\n## 1. 概要\n{content}\n\n## 2. 主要要件\n- [ ] 要件の具体化\n- [ ] 実装スコープの確定"
-    )
-    return StructuredNote(structured_title=fallback_title, structured_content=fallback_content)
