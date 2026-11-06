@@ -116,8 +116,7 @@ def test_event_failure_does_not_break_the_request(guest_client: TestClient, monk
 
     monkeypatch.setattr(events_service, "validate_properties", broken)
     body = guest_client.get("/api/workspace/bootstrap").json()
-    section = body["data"]["sections"][0]["id"]
-    response = guest_client.post(f"/api/projects/{body['currentProjectId']}/notes", json={"sectionId": section})
+    response = guest_client.post(f"/api/projects/{body['currentProjectId']}/notes", json={})
     assert response.status_code == 201
 
 

@@ -1,4 +1,4 @@
-"""Workspace API: projects / sections / notes / prds / preferences と旧 localStorage データの取り込み。
+"""Workspace API: projects / notes / prds / preferences と旧 localStorage データの取り込み。
 ログイン（ゲスト可）必須。他人のリソースは 404（main.py の例外ハンドラ）"""
 
 from __future__ import annotations
@@ -23,10 +23,6 @@ from backend.app.models.workspace import (
     ProjectCreate,
     ProjectData,
     ProjectUpdate,
-    Section,
-    SectionCreate,
-    SectionOrder,
-    SectionUpdate,
     WorkspacePreferences,
 )
 from backend.app.services import legacy_import
@@ -73,29 +69,6 @@ async def delete_project(project_id: UUID, user: CurrentUser, db: Db) -> None:
     await repo.delete_project(db, user.user_id, project_id)
 
 
-# ---------------------------------------------------------------- sections
-
-
-@router.post("/projects/{project_id}/sections", status_code=201)
-async def create_section(project_id: UUID, body: SectionCreate, user: CurrentUser, db: Db) -> Section:
-    return await repo.create_section(db, user.user_id, project_id, body.name)
-
-
-@router.put("/projects/{project_id}/sections/order")
-async def reorder_sections(project_id: UUID, body: SectionOrder, user: CurrentUser, db: Db) -> list[Section]:
-    return await repo.reorder_sections(db, user.user_id, project_id, body.ordered_ids)
-
-
-@router.patch("/sections/{section_id}")
-async def update_section(section_id: UUID, body: SectionUpdate, user: CurrentUser, db: Db) -> Section:
-    return await repo.update_section(db, user.user_id, section_id, body)
-
-
-@router.delete("/sections/{section_id}", status_code=204)
-async def delete_section(section_id: UUID, user: CurrentUser, db: Db) -> None:
-    await repo.delete_section(db, user.user_id, section_id)
-
-
 # ---------------------------------------------------------------- notes
 
 
@@ -120,6 +93,18 @@ async def delete_note(note_id: UUID, user: CurrentUser, db: Db) -> None:
 # ---------------------------------------------------------------- PRD
 
 
+@router.get("/projects/{project_id}/prds", response_model_exclude_none=True)
+async def list_prds(project_id: UUID, user: CurrentUser, db: Db) -> list[PrdDocument]:
+    """プロジェクトの PRD（更新日時の降順）"""
+    await repo.get_project(db, user.user_id, project_id)
+    return await repo.list_prds(db, user.user_id, project_id)
+
+
+@router.get("/prds/{prd_id}", response_model_exclude_none=True)
+async def get_prd(prd_id: UUID, user: CurrentUser, db: Db) -> PrdDocument:
+    return await repo.get_prd(db, user.user_id, prd_id)
+
+
 @router.post("/projects/{project_id}/prds", status_code=201, response_model_exclude_none=True)
 async def create_prd(project_id: UUID, body: PrdSave, user: CurrentUser, db: Db) -> PrdDocument:
     return await repo.create_prd(db, user.user_id, project_id, body)
@@ -127,7 +112,7 @@ async def create_prd(project_id: UUID, body: PrdSave, user: CurrentUser, db: Db)
 
 @router.put("/prds/{prd_id}", response_model_exclude_none=True)
 async def save_prd(prd_id: UUID, body: PrdSave, user: CurrentUser, db: Db) -> PrdDocument:
-    """現在の内容を版履歴に積んでから更新する（再生成・編集・版の復元）"""
+    """現在の内容を版履歴に積んでから更新する（編集・版の復元。再生成は新しい PRD を作る）"""
     return await repo.save_prd_version(db, user.user_id, prd_id, body)
 
 

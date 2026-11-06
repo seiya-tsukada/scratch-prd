@@ -2,7 +2,7 @@
  * PRD 生成モード・詳細度などの表示定義。
  * Tailwind のクラス名はビルド時に静的解析されるため、必ず完全な文字列で記述する。
  */
-import type { PrdDetailLevel, PrdGenerationMode, PrdOpenQuestion, PrdProposal } from '../types';
+import type { PrdDetailLevel, PrdGenerationMode, PrdOpenQuestion, PrdProposal, StoredGenerationMode } from '../types';
 
 export const DEFAULT_GENERATION_MODE: PrdGenerationMode = 'suggest';
 export const DEFAULT_DETAIL_LEVEL: PrdDetailLevel = 'standard';
@@ -62,9 +62,22 @@ export const PRD_MODE_META: Record<PrdGenerationMode, PrdModeMeta> = {
   },
 };
 
-/** 未知の値は「整理＆提案」として扱う */
-export const getPrdModeMeta = (mode: PrdGenerationMode | undefined): PrdModeMeta =>
-  (mode && PRD_MODE_META[mode]) || PRD_MODE_META.suggest;
+/** 旧データ（PRD セクションのメモ）から変換した PRD の表示 */
+export const UNKNOWN_MODE_META: PrdModeMeta = {
+  ...PRD_MODE_META.suggest,
+  shortLabel: '不明',
+  titleLabel: '不明',
+  badgeLabel: '生成モード不明（旧データから変換）',
+  badgeClass: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300',
+};
+
+/** unknown は「不明」、それ以外の未知の値は「整理＆提案」として扱う */
+export const getPrdModeMeta = (mode: StoredGenerationMode | undefined): PrdModeMeta =>
+  mode === 'unknown' ? UNKNOWN_MODE_META : (mode && PRD_MODE_META[mode]) || PRD_MODE_META.suggest;
+
+/** 再生成に使う生成モード（unknown は既定のモードにする） */
+export const toGenerationMode = (mode: StoredGenerationMode | undefined): PrdGenerationMode =>
+  mode && mode !== 'unknown' ? mode : DEFAULT_GENERATION_MODE;
 
 export const PRD_DETAIL_LEVEL_ORDER: PrdDetailLevel[] = ['brief', 'standard', 'detailed'];
 
@@ -88,9 +101,6 @@ export const OPEN_QUESTION_URGENCY_LABELS: Record<PrdOpenQuestion['urgency'], st
   critical: '至急確認',
   normal: '通常確認',
 };
-
-/** 「PRDを新規作成」を表す保存先セレクトの値 */
-export const NEW_PRD_TARGET = 'new';
 
 /** AIコーディングツール向けコピー時に PRD の前に付与するプロンプト */
 export const AI_CODING_PROMPT_HEADER = `# Product Requirements Document & Implementation Guide

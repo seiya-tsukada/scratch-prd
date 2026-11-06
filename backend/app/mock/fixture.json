@@ -19,52 +19,9 @@
     ],
     "currentProjectId": "1c6f7c46-1d83-4ae9-a984-e88fb72676cf",
     "data": {
-      "sections": [
-        {
-          "id": "47cdf0c4-ccbe-4488-b262-8c01d3689e84",
-          "projectId": "1c6f7c46-1d83-4ae9-a984-e88fb72676cf",
-          "userId": "1a20891f-018c-44f7-8f62-bb795a6e45c4",
-          "name": "Inbox (思いつき・素早いメモ)",
-          "position": 0,
-          "icon": "Inbox",
-          "createdAt": "2026-11-05T02:46:01.246736Z",
-          "updatedAt": "2026-11-05T02:46:01.246736Z"
-        },
-        {
-          "id": "948f5673-e3f0-4896-968f-9d6923391f5b",
-          "projectId": "1c6f7c46-1d83-4ae9-a984-e88fb72676cf",
-          "userId": "1a20891f-018c-44f7-8f62-bb795a6e45c4",
-          "name": "Problem & Users (課題・ユーザー)",
-          "position": 1,
-          "icon": "Users",
-          "createdAt": "2026-11-05T02:46:01.246736Z",
-          "updatedAt": "2026-11-05T02:46:01.246736Z"
-        },
-        {
-          "id": "a574839e-8554-4bd4-9fe7-9ec6d3f40d09",
-          "projectId": "1c6f7c46-1d83-4ae9-a984-e88fb72676cf",
-          "userId": "1a20891f-018c-44f7-8f62-bb795a6e45c4",
-          "name": "Features & Ideas (機能・アイデア)",
-          "position": 2,
-          "icon": "Lightbulb",
-          "createdAt": "2026-11-05T02:46:01.246736Z",
-          "updatedAt": "2026-11-05T02:46:01.246736Z"
-        },
-        {
-          "id": "236e6918-badc-40b8-a6ed-1b4e59676e3b",
-          "projectId": "1c6f7c46-1d83-4ae9-a984-e88fb72676cf",
-          "userId": "1a20891f-018c-44f7-8f62-bb795a6e45c4",
-          "name": "PRD (生成・編集した仕様書)",
-          "position": 3,
-          "icon": "FileText",
-          "createdAt": "2026-11-05T02:46:01.246736Z",
-          "updatedAt": "2026-11-05T02:46:01.246736Z"
-        }
-      ],
       "notes": [
         {
           "id": "ebb24d93-dda6-44dc-83a8-8c3492fa4184",
-          "sectionId": "47cdf0c4-ccbe-4488-b262-8c01d3689e84",
           "projectId": "1c6f7c46-1d83-4ae9-a984-e88fb72676cf",
           "userId": "1a20891f-018c-44f7-8f62-bb795a6e45c4",
           "title": "生成したPRDをAIエージェントに渡すエクスポート",
@@ -75,7 +32,6 @@
         },
         {
           "id": "7e7b5fc1-121a-4d80-ba9a-b6b686b15610",
-          "sectionId": "a574839e-8554-4bd4-9fe7-9ec6d3f40d09",
           "projectId": "1c6f7c46-1d83-4ae9-a984-e88fb72676cf",
           "userId": "1a20891f-018c-44f7-8f62-bb795a6e45c4",
           "title": "AIの3つの生成モード（厳密・提案・拡張）",
@@ -86,7 +42,6 @@
         },
         {
           "id": "8d25c34b-98f6-480b-b737-3b896fb6ae37",
-          "sectionId": "a574839e-8554-4bd4-9fe7-9ec6d3f40d09",
           "projectId": "1c6f7c46-1d83-4ae9-a984-e88fb72676cf",
           "userId": "1a20891f-018c-44f7-8f62-bb795a6e45c4",
           "title": "1〜4ペインの柔軟な分割表示",
@@ -97,7 +52,6 @@
         },
         {
           "id": "391914ba-d944-4172-b0ef-9513b4f66f0f",
-          "sectionId": "948f5673-e3f0-4896-968f-9d6923391f5b",
           "projectId": "1c6f7c46-1d83-4ae9-a984-e88fb72676cf",
           "userId": "1a20891f-018c-44f7-8f62-bb795a6e45c4",
           "title": "ターゲット層とAIコーディング時のペイン",
@@ -108,7 +62,6 @@
         },
         {
           "id": "0aab9ffb-dca2-4474-9c75-5f1f21337f6b",
-          "sectionId": "47cdf0c4-ccbe-4488-b262-8c01d3689e84",
           "projectId": "1c6f7c46-1d83-4ae9-a984-e88fb72676cf",
           "userId": "1a20891f-018c-44f7-8f62-bb795a6e45c4",
           "title": "思いつきを0秒で書けるキャプチャ体験",

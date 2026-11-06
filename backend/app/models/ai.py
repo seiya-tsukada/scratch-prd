@@ -10,6 +10,8 @@ from pydantic.alias_generators import to_camel
 from backend.app import config
 
 PrdGenerationMode = Literal["strict", "suggest", "expand"]
+# 保存済みの PRD の生成モード。unknown は旧データ（PRD セクションのメモ）から変換したもの
+StoredGenerationMode = Literal["strict", "suggest", "expand", "unknown"]
 PrdDetailLevel = Literal["brief", "standard", "detailed"]
 FallbackReason = Literal["no_api_key", "ai_error", "invalid_response"]
 
@@ -61,7 +63,6 @@ class PrdNoteInput(CamelModel):
     id: str
     title: str = Field(default="", max_length=config.MAX_TITLE_CHARS)
     content: str = Field(max_length=config.MAX_NOTE_CONTENT_CHARS)
-    section_name: str | None = Field(default=None, max_length=config.MAX_TITLE_CHARS)
 
 
 PreviousItem = Field(max_length=config.MAX_PREVIOUS_ITEM_CHARS)

@@ -4,8 +4,6 @@
 import { AI_INPUT_LIMITS, PreviousPrd } from '../config/api';
 import type { Note, PrdDocument, PrdFact, PrdOpenQuestion, PrdProposal } from '../types';
 
-/** 回答を保存するセクション（無ければ作る） */
-export const DECISION_SECTION_NAME = '決定事項 (Decisions)';
 const DECISION_TITLE_PREFIX = '決定: ';
 const ANSWER_HEADING = '## 回答';
 

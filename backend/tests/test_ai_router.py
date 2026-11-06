@@ -44,7 +44,7 @@ PRD_REQUEST: dict[str, Any] = {
     "projectName": "Proj",
     "mode": "suggest",
     "detailLevel": "standard",
-    "notes": [{"id": "n1", "title": "T", "content": "body", "sectionName": "Inbox"}],
+    "notes": [{"id": "n1", "title": "T", "content": "body"}],
 }
 
 AI_PRD = GeneratedPrd.model_validate(
@@ -74,7 +74,7 @@ def test_generate_prd_success(client: TestClient) -> None:
     assert body["facts"] == [{"id": "f1", "text": "fact", "sourceNoteId": "n1"}]
     assert body["openQuestions"][0]["urgency"] == "normal"
     assert body["contradictions"][0]["notesInvolved"] == ["n1"]
-    assert "Section: Inbox" in gemini.prompts[0]
+    assert "[Note #1] ID: n1 | Title: T\nContent:\nbody" in gemini.prompts[0]
 
 
 @pytest.mark.parametrize(

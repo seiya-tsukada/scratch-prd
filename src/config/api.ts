@@ -115,7 +115,6 @@ export interface PrdNoteInput {
   id: string;
   title: string;
   content: string;
-  sectionName?: string;
 }
 
 export interface GeneratePrdRequest {

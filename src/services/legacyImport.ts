@@ -1,11 +1,23 @@
 import { LEGACY_STORAGE_KEYS } from '../config/legacyStorage';
-import type { Note, PrdDocument, Project, Section, WorkspacePreferences } from '../types';
+import type { Note, PrdDocument, Project, WorkspacePreferences } from '../types';
+
+/** 旧データのセクション（サーバーは PRD セクションのメモを PRD に変換するためだけに使う） */
+export interface LegacySection {
+  id: string;
+  projectId: string;
+  name: string;
+  position: number;
+  icon?: string;
+}
+
+/** 旧データのメモ（セクションに属していた） */
+export type LegacyNote = Note & { sectionId?: string };
 
 /** POST /api/import/local-project に送る 1 プロジェクト分（ID は旧データのまま。サーバーが振り直す） */
 export interface LegacyProjectImport {
   project: Project;
-  sections: Section[];
-  notes: Note[];
+  sections: LegacySection[];
+  notes: LegacyNote[];
   prds: PrdDocument[];
   preferences?: WorkspacePreferences;
 }
@@ -37,8 +49,8 @@ const readPrefs = (storage: Storage): Record<string, WorkspacePreferences> => {
 
 /** 旧バージョンが localStorage に残したプロジェクトを、取り込み用にプロジェクト単位でまとめる */
 export function findLegacyProjects(storage: Storage = localStorage): LegacyProjectSummary[] {
-  const sections = readArray<Section>(storage, LEGACY_STORAGE_KEYS.SECTIONS);
-  const notes = readArray<Note>(storage, LEGACY_STORAGE_KEYS.NOTES);
+  const sections = readArray<LegacySection>(storage, LEGACY_STORAGE_KEYS.SECTIONS);
+  const notes = readArray<LegacyNote>(storage, LEGACY_STORAGE_KEYS.NOTES);
   const prds = readArray<PrdDocument>(storage, LEGACY_STORAGE_KEYS.PRDS);
   const prefs = readPrefs(storage);
 
@@ -67,7 +79,7 @@ export function removeLegacyProject(projectId: string, storage: Storage = localS
     storage.setItem(key, JSON.stringify(readArray<T>(storage, key).filter((item) => !isTarget(item))));
   };
   keep<Project>(LEGACY_STORAGE_KEYS.PROJECTS, (p) => p.id === projectId);
-  keep<Section>(LEGACY_STORAGE_KEYS.SECTIONS, (s) => s.projectId === projectId);
+  keep<LegacySection>(LEGACY_STORAGE_KEYS.SECTIONS, (s) => s.projectId === projectId);
   keep<Note>(LEGACY_STORAGE_KEYS.NOTES, (n) => n.projectId === projectId);
   keep<PrdDocument>(LEGACY_STORAGE_KEYS.PRDS, (p) => p.projectId === projectId);
   const prefs = readPrefs(storage);

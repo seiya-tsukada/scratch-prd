@@ -1,4 +1,4 @@
-"""ユーザー配下データ（projects / sections / notes / prds / preferences）の DB 操作。
+"""ユーザー配下データ（projects / notes / prds / preferences）の DB 操作。
 
 すべての関数は user_id を必須で受け取り、すべてのクエリに user_id 条件を付ける。
 他人の ID・存在しない ID は NotFoundError（ルーターで 404）にして、存在を漏らさない。
@@ -28,8 +28,6 @@ from backend.app.models.workspace import (
     Project,
     ProjectData,
     ProjectUpdate,
-    Section,
-    SectionUpdate,
     WorkspacePreferences,
 )
 
@@ -123,7 +121,6 @@ async def get_project(conn: Conn, user_id: UUID, project_id: UUID) -> Project:
 
 
 async def create_project(conn: Conn, user_id: UUID, name: str, description: str) -> Project:
-    """プロジェクトを作り、有効なセクションテンプレートからセクションを作る"""
     await _ensure_below_limit(
         conn,
         "projects",
@@ -131,28 +128,13 @@ async def create_project(conn: Conn, user_id: UUID, name: str, description: str)
         "select count(*) from idea_ws.projects where user_id = %s",
         (user_id,),
     )
-    async with conn.transaction():
-        row = await _fetch_one(
-            conn,
-            "insert into idea_ws.projects (user_id, name, description) values (%s, %s, %s) returning *",
-            (user_id, name, description),
-        )
-        assert row is not None
-        project = Project.model_validate(row)
-        await create_sections_from_templates(conn, user_id, project.id)
-    return project
-
-
-async def create_sections_from_templates(conn: Conn, user_id: UUID, project_id: UUID) -> None:
-    await conn.execute(
-        """
-        insert into idea_ws.sections (user_id, project_id, name, icon, position)
-        select %s, %s, name, icon, (row_number() over (order by position, created_at) - 1)::int
-        from idea_ws.section_templates
-        where is_active
-        """,
-        (user_id, project_id),
+    row = await _fetch_one(
+        conn,
+        "insert into idea_ws.projects (user_id, name, description) values (%s, %s, %s) returning *",
+        (user_id, name, description),
     )
+    assert row is not None
+    return Project.model_validate(row)
 
 
 async def update_project(conn: Conn, user_id: UUID, project_id: UUID, update: ProjectUpdate) -> Project:
@@ -164,80 +146,6 @@ async def update_project(conn: Conn, user_id: UUID, project_id: UUID, update: Pr
 
 async def delete_project(conn: Conn, user_id: UUID, project_id: UUID) -> None:
     await _delete_owned(conn, "projects", user_id, project_id)
-
-
-# ---------------------------------------------------------------- sections
-
-
-async def list_sections(conn: Conn, user_id: UUID, project_id: UUID) -> list[Section]:
-    rows = await _fetch_all(
-        conn,
-        "select * from idea_ws.sections where user_id = %s and project_id = %s order by position, created_at, id",
-        (user_id, project_id),
-    )
-    return [Section.model_validate(r) for r in rows]
-
-
-async def create_section(conn: Conn, user_id: UUID, project_id: UUID, name: str) -> Section:
-    await get_project(conn, user_id, project_id)
-    await _ensure_below_limit(
-        conn,
-        "sections",
-        config.MAX_SECTIONS_PER_PROJECT,
-        "select count(*) from idea_ws.sections where user_id = %s and project_id = %s",
-        (user_id, project_id),
-    )
-    row = await _fetch_one(
-        conn,
-        """
-        insert into idea_ws.sections (user_id, project_id, name, icon, position)
-        select %s, %s, %s, %s, coalesce(max(position) + 1, 0)
-        from idea_ws.sections where user_id = %s and project_id = %s
-        returning *
-        """,
-        (user_id, project_id, name, config.CUSTOM_SECTION_ICON, user_id, project_id),
-    )
-    assert row is not None
-    return Section.model_validate(row)
-
-
-async def update_section(conn: Conn, user_id: UUID, section_id: UUID, update: SectionUpdate) -> Section:
-    row = await _update_owned(conn, "sections", user_id, section_id, update.model_dump(exclude_none=True))
-    if row is None:
-        raise NotFoundError
-    return Section.model_validate(row)
-
-
-async def delete_section(conn: Conn, user_id: UUID, section_id: UUID) -> None:
-    """セクション内のメモも外部キーの cascade で削除される"""
-    await _delete_owned(conn, "sections", user_id, section_id)
-
-
-async def reorder_sections(conn: Conn, user_id: UUID, project_id: UUID, ordered_ids: list[UUID]) -> list[Section]:
-    """ordered_ids の順に position を振り直す。プロジェクトの全セクションをちょうど 1 回ずつ含むこと"""
-    await get_project(conn, user_id, project_id)
-    current = {s.id for s in await list_sections(conn, user_id, project_id)}
-    if len(ordered_ids) != len(set(ordered_ids)) or set(ordered_ids) != current:
-        raise NotFoundError
-    await conn.execute(
-        """
-        update idea_ws.sections s
-        set position = o.ordinality - 1
-        from unnest(%s::uuid[]) with ordinality as o(id, ordinality)
-        where s.id = o.id and s.user_id = %s and s.project_id = %s
-        """,
-        (ordered_ids, user_id, project_id),
-    )
-    return await list_sections(conn, user_id, project_id)
-
-
-async def _section_project(conn: Conn, user_id: UUID, section_id: UUID) -> UUID:
-    row = await _fetch_one(
-        conn, "select project_id from idea_ws.sections where id = %s and user_id = %s", (section_id, user_id)
-    )
-    if row is None:
-        raise NotFoundError
-    return UUID(str(row["project_id"]))
 
 
 # ---------------------------------------------------------------- notes
@@ -260,8 +168,7 @@ async def get_note(conn: Conn, user_id: UUID, note_id: UUID) -> Note:
 
 
 async def create_note(conn: Conn, user_id: UUID, project_id: UUID, body: NoteCreate) -> Note:
-    if await _section_project(conn, user_id, body.section_id) != project_id:
-        raise NotFoundError
+    await get_project(conn, user_id, project_id)
     await _ensure_below_limit(
         conn,
         "notes",
@@ -272,10 +179,10 @@ async def create_note(conn: Conn, user_id: UUID, project_id: UUID, body: NoteCre
     row = await _fetch_one(
         conn,
         """
-        insert into idea_ws.notes (user_id, project_id, section_id, title, content)
-        values (%s, %s, %s, %s, %s) returning *
+        insert into idea_ws.notes (user_id, project_id, title, content)
+        values (%s, %s, %s, %s) returning *
         """,
-        (user_id, project_id, body.section_id, body.title, body.content),
+        (user_id, project_id, body.title, body.content),
     )
     assert row is not None
     return Note.model_validate(row)
@@ -283,11 +190,6 @@ async def create_note(conn: Conn, user_id: UUID, project_id: UUID, body: NoteCre
 
 async def update_note(conn: Conn, user_id: UUID, note_id: UUID, body: NoteUpdate) -> Note:
     updates = body.model_dump(exclude_none=True, exclude={"base_updated_at"})
-    if "section_id" in updates:
-        # 移動先は同じプロジェクトの自分のセクションに限る
-        note = await get_note(conn, user_id, note_id)
-        if await _section_project(conn, user_id, updates["section_id"]) != note.project_id:
-            raise NotFoundError
     if not updates:
         return await get_note(conn, user_id, note_id)
 
@@ -496,7 +398,6 @@ async def save_preferences(conn: Conn, user_id: UUID, project_id: UUID, body: Pr
 async def get_project_data(conn: Conn, user_id: UUID, project_id: UUID) -> ProjectData:
     await get_project(conn, user_id, project_id)
     return ProjectData(
-        sections=await list_sections(conn, user_id, project_id),
         notes=await list_notes(conn, user_id, project_id),
         prds=await list_prds(conn, user_id, project_id),
         preferences=await get_preferences(conn, user_id, project_id),

@@ -5,23 +5,12 @@
 --
 -- sample_contents.content の形式:
 --   project:     { name, description }
---   sections:    [{ key, name, icon, position }]
---   notes:       [{ key, sectionKey, title, content, position, createdHoursAgo, updatedHoursAgo }]
+--   notes:       [{ key, title, content, position, createdHoursAgo, updatedHoursAgo }]
 --   prds:        [{ key, title, content, generationMode, detailLevel, sourceNoteKeys, facts, proposals,
 --                   openQuestions, contradictions, version, createdHoursAgo, updatedHoursAgo }]
 --   preferences: { paneCount, panes: [{ id, noteKey }], activePaneId }
---   key / sectionKey / noteKey はサンプル内の参照用。複製時に uuid を振り直す
+--   key / noteKey はサンプル内の参照用。複製時に uuid を振り直す
 -- ========================================================
-
-insert into idea_ws.section_templates (name, icon, position)
-select v.name, v.icon, v.position
-from (values
-  ('Inbox (思いつき)', 'Inbox', 0),
-  ('Problem & Users (課題・ユーザー)', 'Users', 1),
-  ('Features & Ideas (機能・アイデア)', 'Lightbulb', 2),
-  ('PRD (生成された仕様書)', 'FileText', 3)
-) as v (name, icon, position)
-where not exists (select 1 from idea_ws.section_templates);
 
 insert into idea_ws.sample_contents (version, is_active, content)
 values (1, true, $sample${
@@ -29,36 +18,9 @@ values (1, true, $sample${
     "name": "Idea Workspace (思考からPRDへ)",
     "description": "断片的な思考を開発可能なPRDへ育てるワークスペース"
   },
-  "sections": [
-    {
-      "key": "inbox",
-      "name": "Inbox (思いつき・素早いメモ)",
-      "icon": "Inbox",
-      "position": 0
-    },
-    {
-      "key": "problem-users",
-      "name": "Problem & Users (課題・ユーザー)",
-      "icon": "Users",
-      "position": 1
-    },
-    {
-      "key": "features-ideas",
-      "name": "Features & Ideas (機能・アイデア)",
-      "icon": "Lightbulb",
-      "position": 2
-    },
-    {
-      "key": "prd",
-      "name": "PRD (生成・編集した仕様書)",
-      "icon": "FileText",
-      "position": 3
-    }
-  ],
   "notes": [
     {
       "key": "01-inbox-capture",
-      "sectionKey": "inbox",
       "title": "思いつきを0秒で書けるキャプチャ体験",
       "content": "# 思考を止めないキャプチャ\n- 思いついた瞬間、分類やタイトルを考える必要をなくしたい\n- タイトルが空でも、本文の1行目を自動でタイトルプレビューにすれば良い\n- ショートカットキー「Cmd + N」またはヘッダーの「+ メモ」で即座に入力開始\n- 自動保存で、保存忘れによるデータ消失を完全に防止する",
       "position": 0,
@@ -67,7 +29,6 @@ values (1, true, $sample${
     },
     {
       "key": "02-target-pain",
-      "sectionKey": "problem-users",
       "title": "ターゲット層とAIコーディング時のペイン",
       "content": "# ターゲットユーザー\n- 個人開発者、vibe coder、新規プロダクトのPdM\n- Claude CodeやCursor、WindsurfなどのAIエージェントを活用する開発者\n\n# 現状の課題（ペイン）\n1. AIコーディングツールを使う際、指示が雑だとハルシネーションが起きたり意図と違う設計になる\n2. しかし、最初から完璧なPRD（要件定義書）を手書きするのは心理的ハードルが高すぎる\n3. 日常のメモや気づきが散逸しており、開発仕様書へ変換する作業に多くの時間が取られている",
       "position": 0,
@@ -76,7 +37,6 @@ values (1, true, $sample${
     },
     {
       "key": "03-multipane",
-      "sectionKey": "features-ideas",
       "title": "1〜4ペインの柔軟な分割表示",
       "content": "# マルチペイン思考環境\n- 1画面（集中執筆）、2画面（左右比較）、3画面、4画面（2x2グリッド）を1クリックで切り替え\n- ペインごとに任意のメモを自由に割り当て可能\n- 例：\n  - 左ペイン：ユーザー課題\n  - 右ペイン：機能要件\n  - 下ペイン：実装技術メモやAPI設計\n- どのペインの編集もリアルタイムに自動保存される",
       "position": 0,
@@ -85,7 +45,6 @@ values (1, true, $sample${
     },
     {
       "key": "04-ai-modes",
-      "sectionKey": "features-ideas",
       "title": "AIの3つの生成モード（厳密・提案・拡張）",
       "content": "# 信頼できるAI仕様書生成\n1. **Mode A: 厳密 (Strict)**\n   - ユーザーのメモにある事実のみを使用\n   - 不足情報は勝手に創作せず「未定」「要確認」と明記\n2. **Mode B: 整理＆提案 (Organize & Suggest) [デフォルト]**\n   - 原文の意図を汲んで構成を整え、必要な要件を提案としてラベル付け\n3. **Mode C: 仮説拡張 (Expand)**\n   - KPI候補、リスク要因、将来の拡張ロードマップまで積極提案\n\n# 出力分類\n- FACT: 原文で確認できる確実な情報\n- PROPOSAL: AIによる補足・提案\n- OPEN_QUESTION: ユーザーの意思決定が必要な未解決事項",
       "position": 1,
@@ -94,7 +53,6 @@ values (1, true, $sample${
     },
     {
       "key": "05-inbox-export",
-      "sectionKey": "inbox",
       "title": "生成したPRDをAIエージェントに渡すエクスポート",
       "content": "# 実装へのシームレスな接続\n- 生成されたPRDをワンクリックで「Cursor / Claude Code用プロンプト」形式でクリップボードにコピー\n- Markdownファイル（.md）のダウンロード\n- 将来的にGitHub Issueへの直接起票も視野に入れる",
       "position": 1,

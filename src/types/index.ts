@@ -1,4 +1,6 @@
 export type PrdGenerationMode = 'strict' | 'suggest' | 'expand';
+/** 保存済みの PRD の生成モード。unknown は旧データ（PRD セクションのメモ）から変換したもの */
+export type StoredGenerationMode = PrdGenerationMode | 'unknown';
 export type PrdDetailLevel = 'brief' | 'standard' | 'detailed';
 
 export interface UserProfile {
@@ -17,20 +19,8 @@ export interface Project {
   updatedAt: string;
 }
 
-export interface Section {
-  id: string;
-  projectId: string;
-  userId: string;
-  name: string;
-  position: number;
-  icon?: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface Note {
   id: string;
-  sectionId: string;
   projectId: string;
   userId: string;
   title: string;
@@ -74,7 +64,7 @@ export interface PrdVersion {
   versionNumber: number;
   title: string;
   content: string;
-  generationMode: PrdGenerationMode;
+  generationMode: StoredGenerationMode;
   detailLevel: PrdDetailLevel;
   sourceNoteIds: string[];
   facts: PrdFact[];
@@ -91,7 +81,7 @@ export interface PrdDocument {
   userId: string;
   title: string;
   content: string;
-  generationMode: PrdGenerationMode;
+  generationMode: StoredGenerationMode;
   detailLevel: PrdDetailLevel;
   sourceNoteIds: string[];
   facts: PrdFact[];

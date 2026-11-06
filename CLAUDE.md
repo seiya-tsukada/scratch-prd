@@ -39,8 +39,8 @@ Vercel（同一リポジトリ・同一ドメイン）
 | データ | 置き場所 |
 |---|---|
 | ユーザー・認証（users, user_identities, sessions, email_login_tokens, oauth_states） | `idea_ws` |
-| ユーザーデータ（projects, sections, notes, prd_documents, prd_versions, workspace_preferences） | `idea_ws` |
-| コンテンツ（section_templates, sample_contents） | `idea_ws`（デプロイ無しで初回体験を調整するため） |
+| ユーザーデータ（projects, notes, prd_documents, prd_versions, workspace_preferences） | `idea_ws` |
+| コンテンツ（sample_contents） | `idea_ws`（デプロイ無しで初回体験を調整するため） |
 | グロース計測（events, ai_generations, api_usage） | `idea_ws` |
 | 秘密情報（DB 接続文字列・API キー・pepper 等） | Vercel の環境変数のみ。フロントに渡してよいのは `VITE_` 接頭辞の公開値だけ |
 | ブラウザ | セッション Cookie（httpOnly）のみ。旧 localStorage（`idea_workspace_*_v2`）は初回インポート後に削除する |
@@ -104,7 +104,7 @@ api/index.py             Vercel Function の入口。backend.app.main の app �
 scripts/                 check-bundle-secrets.mjs（ビルド成果物の秘密情報検査）
 .github/workflows/       ci.yml（lint / テスト / ビルド / 秘密情報検査）
 supabase/migrations/     SQL マイグレーション（Supabase CLI 形式）
-supabase/seed.sql        section_templates / sample_contents
+supabase/seed.sql        sample_contents
 docker-compose.yml       ローカル / テスト用 Postgres（Supabase の Postgres イメージ）
 docs/                    migration-plan.md, supabase-setup.md, deploy.md（環境変数一覧とデプロイ手順）
 pyproject.toml           Python 依存（uv で管理）
@@ -181,8 +181,9 @@ Workspace API（Phase 4a〜）:
 - モック（`backend/app/mock/`。DB に接続せず固定のサンプルを返す）は Supabase を用意するまでの一時的な仕組み。`MOCK_BACKEND=true`、または Vercel 上で `DATABASE_URL` が未設定のとき自動で有効になる（`config.Settings.use_mock`。`check:bundle` も同じ規則）。
 - 環境変数を足したら `docs/deploy.md` の表と `.env.example` を更新する。
 - `VERCEL_ENV=production` では `config.Settings` がローカル用の値（localhost の DB・テスト用 Turnstile キー・短い pepper・`COOKIE_SECURE=false` など）を拒否して起動しない。`check:bundle` も本番ビルドにテスト用サイトキーがあれば失敗する。
-- PRD 生成の入口は `PrdGeneratorModal` だけ（入力元は「メモから」と「テキストを貼り付け」。貼り付けた内容は Inbox のメモにしてから使う）。初回の案内も同じダイアログを `isOnboarding` で開く。PRD 生成は `App.tsx` の `generatePrdFromNotes` に集約している。殴り書きの整形（`/api/structure-rough-note`）は廃止した（PRD 生成のプロンプトが整形を兼ねる）。
-- 再生成では PRD 本文を AI に渡さず、`src/utils/prdLoop.ts` の `buildPreviousPrd` で作った要約（`previousPrd`）を渡す。未決事項への回答は「決定事項」セクションのメモで、タイトルの形式（`decisionTitle`）で回答済みを判定している（Phase 8）。サーバー側の秘密は `scripts/check-bundle-secrets.mjs` の `SERVER_ONLY_ENV` にも足す。
+- セクションは廃止した（`20261107000001_idea_ws_remove_sections.sql`）。メモと PRD は別のエンティティで、サイドバーの「メモ」「PRD」タブにそれぞれ更新日時の降順で並ぶ。PRD は `source_note_ids` で生成元メモを参照する（メモを消しても PRD は残り、画面では「削除済み」と出す）。再生成は元の PRD を変えず、常に新しい PRD を作る。`generation_mode = 'unknown'` は旧データ（PRD セクションのメモ）から変換した PRD。
+- PRD 生成の入口は `PrdGeneratorModal` だけ（入力元は「メモから」と「テキストを貼り付け」。貼り付けた内容はメモにしてから使う）。初回の案内も同じダイアログを `isOnboarding` で開く。PRD 生成は `App.tsx` の `generatePrdFromNotes` に集約している。殴り書きの整形（`/api/structure-rough-note`）は廃止した（PRD 生成のプロンプトが整形を兼ねる）。
+- 再生成では PRD 本文を AI に渡さず、`src/utils/prdLoop.ts` の `buildPreviousPrd` で作った要約（`previousPrd`）を渡す。未決事項への回答はタイトルが「決定: 〜」のメモで、タイトルの形式（`decisionTitle`）で回答済みを判定している（Phase 8）。サーバー側の秘密は `scripts/check-bundle-secrets.mjs` の `SERVER_ONLY_ENV` にも足す。
 
 AI（Phase 2〜）:
 

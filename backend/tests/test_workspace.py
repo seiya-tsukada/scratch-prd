@@ -47,9 +47,9 @@ def test_bootstrap_returns_sample_for_new_guest(guest_client: TestClient) -> Non
     assert len(body["projects"]) == 1
     assert body["currentProjectId"] == body["projects"][0]["id"]
     data = body["data"]
-    assert len(data["sections"]) == 4
-    assert [s["position"] for s in data["sections"]] == [0, 1, 2, 3]
+    assert "sections" not in data
     assert len(data["notes"]) == 5
+    assert all("sectionId" not in n for n in data["notes"])
     updated = [n["updatedAt"] for n in data["notes"]]
     assert updated == sorted(updated, reverse=True)
     assert len(data["prds"]) == 1 and data["prds"][0]["versions"] == []
@@ -72,17 +72,12 @@ def test_bootstrap_without_projects(guest_client: TestClient) -> None:
 # ---------------------------------------------------------------- projects
 
 
-def test_create_project_uses_section_templates(guest_client: TestClient, db_admin: psycopg.Connection[Any]) -> None:
-    db_admin.execute("update idea_ws.section_templates set name = 'Custom Inbox' where position = 0")
-    try:
-        project = create_project(guest_client, "  Trimmed  ")
-    finally:
-        db_admin.execute("update idea_ws.section_templates set name = 'Inbox (思いつき)' where position = 0")
+def test_create_project_starts_empty(guest_client: TestClient) -> None:
+    project = create_project(guest_client, "  Trimmed  ")
 
     assert project["name"] == "Trimmed"
     data = guest_client.get(f"/api/projects/{project['id']}/data").json()
-    assert [s["name"] for s in data["sections"]][0] == "Custom Inbox"
-    assert len(data["sections"]) == 4
+    assert "sections" not in data
     assert data["notes"] == [] and data["prds"] == []
     assert data["preferences"]["panes"] == [{"id": f"pane-{i}"} for i in range(4)]
 
@@ -96,10 +91,12 @@ def test_update_and_delete_project(guest_client: TestClient, db_admin: psycopg.C
     assert updated["name"] == "Renamed" and updated["description"] == ""
     assert updated["updatedAt"] > project["updatedAt"]
 
+    note = guest_client.post(f"/api/projects/{project['id']}/notes", json={"content": "x"}).json()
+    prd = guest_client.post(f"/api/projects/{project['id']}/prds", json=PRD_BODY).json()
+
     assert guest_client.delete(f"/api/projects/{project['id']}").status_code == 204
-    assert db_admin.execute(
-        "select count(*) from idea_ws.sections where project_id = %s", (project["id"],)
-    ).fetchone() == (0,)
+    assert db_admin.execute("select count(*) from idea_ws.notes where id = %s", (note["id"],)).fetchone() == (0,)
+    assert db_admin.execute("select count(*) from idea_ws.prd_documents where id = %s", (prd["id"],)).fetchone() == (0,)
     assert guest_client.delete(f"/api/projects/{project['id']}").status_code == 404
 
 
@@ -123,71 +120,34 @@ def test_project_limit(guest_client: TestClient, db_admin: psycopg.Connection[An
     }
 
 
-# ---------------------------------------------------------------- sections
-
-
-def test_section_crud_and_reorder(guest_client: TestClient) -> None:
-    project = create_project(guest_client)
-    pid = project["id"]
-
-    created = guest_client.post(f"/api/projects/{pid}/sections", json={"name": "Extra"})
-    assert created.status_code == 201
-    section = created.json()
-    assert section["position"] == 4 and section["icon"] == "Folder"
-
-    renamed = guest_client.patch(f"/api/sections/{section['id']}", json={"name": "Renamed"}).json()
-    assert renamed["name"] == "Renamed"
-
-    ids = [s["id"] for s in guest_client.get(f"/api/projects/{pid}/data").json()["sections"]]
-    reordered = guest_client.put(f"/api/projects/{pid}/sections/order", json={"orderedIds": ids[::-1]}).json()
-    assert [s["id"] for s in reordered] == ids[::-1]
-    assert [s["position"] for s in reordered] == list(range(len(ids)))
-
-    # 一部だけ・重複・余計な ID は受け付けない
-    for bad in [ids[:2], [*ids[:-1], ids[0]], [*ids, "00000000-0000-0000-0000-000000000000"]]:
-        assert guest_client.put(f"/api/projects/{pid}/sections/order", json={"orderedIds": bad}).status_code == 404
-
-
-def test_deleting_section_deletes_its_notes(guest_client: TestClient) -> None:
-    data = bootstrap(guest_client)["data"]
-    section = data["sections"][0]
-    in_section = [n for n in data["notes"] if n["sectionId"] == section["id"]]
-    assert in_section
-
-    assert guest_client.delete(f"/api/sections/{section['id']}").status_code == 204
-    remaining = bootstrap(guest_client)["data"]["notes"]
-    assert not {n["id"] for n in in_section} & {n["id"] for n in remaining}
-
-
 # ---------------------------------------------------------------- notes
 
 
-def test_note_crud_and_move(guest_client: TestClient) -> None:
-    data = bootstrap(guest_client)["data"]
+def test_note_crud(guest_client: TestClient) -> None:
     pid = bootstrap(guest_client)["currentProjectId"]
-    first, second = data["sections"][0]["id"], data["sections"][1]["id"]
 
-    note = guest_client.post(f"/api/projects/{pid}/notes", json={"sectionId": first}).json()
+    created = guest_client.post(f"/api/projects/{pid}/notes", json={})
+    assert created.status_code == 201
+    note = created.json()
     assert note["title"] == "" and note["content"] == "" and note["position"] == 0
+    assert note["projectId"] == pid and "sectionId" not in note
+
+    with_body = guest_client.post(f"/api/projects/{pid}/notes", json={"title": "T", "content": "C"}).json()
+    assert with_body["title"] == "T" and with_body["content"] == "C"
 
     updated = guest_client.patch(f"/api/notes/{note['id']}", json={"content": "hello"}).json()
     assert updated["content"] == "hello" and updated["updatedAt"] > note["updatedAt"]
 
-    moved = guest_client.patch(f"/api/notes/{note['id']}", json={"sectionId": second}).json()
-    assert moved["sectionId"] == second and moved["content"] == "hello"
+    renamed = guest_client.patch(f"/api/notes/{note['id']}", json={"title": "Title"}).json()
+    assert renamed["title"] == "Title" and renamed["content"] == "hello"
 
     assert guest_client.delete(f"/api/notes/{note['id']}").status_code == 204
     assert guest_client.patch(f"/api/notes/{note['id']}", json={"content": "x"}).status_code == 404
 
 
-def test_note_cannot_be_put_in_another_projects_section(guest_client: TestClient) -> None:
-    pid = bootstrap(guest_client)["currentProjectId"]
-    note_id = bootstrap(guest_client)["data"]["notes"][0]["id"]
-    other = create_project(guest_client)
-    other_section = guest_client.get(f"/api/projects/{other['id']}/data").json()["sections"][0]["id"]
-
-    assert guest_client.post(f"/api/projects/{pid}/notes", json={"sectionId": other_section}).status_code == 404
-    assert guest_client.patch(f"/api/notes/{note_id}", json={"sectionId": other_section}).status_code == 404
+def test_note_in_unknown_project_is_not_found(guest_client: TestClient) -> None:
+    unknown = "00000000-0000-0000-0000-000000000000"
+    assert guest_client.post(f"/api/projects/{unknown}/notes", json={"content": "x"}).status_code == 404
 
 
 def test_note_conflict_detection(guest_client: TestClient) -> None:
@@ -220,9 +180,8 @@ def test_note_conflict_detection(guest_client: TestClient) -> None:
 
 def test_note_size_limits(guest_client: TestClient) -> None:
     pid = bootstrap(guest_client)["currentProjectId"]
-    section = bootstrap(guest_client)["data"]["sections"][0]["id"]
     long_content = "x" * (config.MAX_STORED_NOTE_CHARS + 1)
-    response = guest_client.post(f"/api/projects/{pid}/notes", json={"sectionId": section, "content": long_content})
+    response = guest_client.post(f"/api/projects/{pid}/notes", json={"content": long_content})
     assert response.status_code == 422
 
 
@@ -256,6 +215,34 @@ def test_prd_versions(guest_client: TestClient) -> None:
 
     assert guest_client.delete(f"/api/prds/{prd['id']}").status_code == 204
     assert guest_client.put(f"/api/prds/{prd['id']}", json=PRD_BODY).status_code == 404
+
+
+def test_list_and_get_prds(guest_client: TestClient) -> None:
+    pid = bootstrap(guest_client)["currentProjectId"]
+    sample_prds = guest_client.get(f"/api/projects/{pid}/prds")
+    assert sample_prds.status_code == 200
+    assert len(sample_prds.json()) == 1
+
+    created = guest_client.post(f"/api/projects/{pid}/prds", json=PRD_BODY).json()
+    saved = guest_client.put(f"/api/prds/{created['id']}", json={**PRD_BODY, "content": "v2"}).json()
+
+    # 更新日時の降順。版履歴も含む
+    listed = guest_client.get(f"/api/projects/{pid}/prds").json()
+    assert [p["id"] for p in listed][0] == created["id"] and len(listed) == 2
+    assert listed[0] == saved
+
+    fetched = guest_client.get(f"/api/prds/{created['id']}")
+    assert fetched.status_code == 200
+    assert fetched.json() == saved and [v["content"] for v in fetched.json()["versions"]] == ["v1"]
+
+    # 他のプロジェクトの PRD は含まない
+    other = create_project(guest_client)
+    assert guest_client.get(f"/api/projects/{other['id']}/prds").json() == []
+
+    assert guest_client.delete(f"/api/prds/{created['id']}").status_code == 204
+    assert guest_client.get(f"/api/prds/{created['id']}").status_code == 404
+    unknown = "00000000-0000-0000-0000-000000000000"
+    assert guest_client.get(f"/api/projects/{unknown}/prds").status_code == 404
 
 
 def test_prd_validation(guest_client: TestClient) -> None:

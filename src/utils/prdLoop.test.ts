@@ -14,7 +14,6 @@ import type { Note, PrdDocument } from '../types';
 
 const note = (title: string, content: string): Note => ({
   id: title,
-  sectionId: 's',
   projectId: 'p',
   userId: 'u',
   title,

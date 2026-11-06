@@ -1,5 +1,6 @@
 """新規ゲストに有効なサンプル（idea_ws.sample_contents）を複製する。
-サンプル内の key 参照は uuid に振り直す。形式は supabase/seed.sql 先頭のコメントを参照"""
+サンプル内の key 参照は uuid に振り直す。形式は supabase/seed.sql 先頭のコメントを参照
+（古い形式の sections / notes[].sectionKey は無視する）"""
 
 from __future__ import annotations
 
@@ -33,31 +34,19 @@ async def copy_active_sample(conn: Conn, user_id: UUID) -> UUID | None:
         (user_id, project["name"], project.get("description", "")),
     )
 
-    section_ids: dict[str, UUID] = {}
-    for s in sample.get("sections", []):
-        section_ids[s["key"]] = await _insert_returning_id(
-            conn,
-            """
-            insert into idea_ws.sections (user_id, project_id, name, icon, position)
-            values (%s, %s, %s, %s, %s) returning id
-            """,
-            (user_id, project_id, s["name"], s.get("icon"), s["position"]),
-        )
-
     note_ids: dict[str, UUID] = {}
     for n in sample.get("notes", []):
         note_ids[n["key"]] = await _insert_returning_id(
             conn,
             """
             insert into idea_ws.notes
-              (user_id, project_id, section_id, title, content, position, created_at, updated_at)
-            values (%s, %s, %s, %s, %s, %s, now() - make_interval(hours => %s), now() - make_interval(hours => %s))
+              (user_id, project_id, title, content, position, created_at, updated_at)
+            values (%s, %s, %s, %s, %s, now() - make_interval(hours => %s), now() - make_interval(hours => %s))
             returning id
             """,
             (
                 user_id,
                 project_id,
-                section_ids[n["sectionKey"]],
                 n["title"],
                 n["content"],
                 n["position"],

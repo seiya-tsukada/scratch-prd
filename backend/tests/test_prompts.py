@@ -21,7 +21,8 @@ def test_generate_prd_prompt_contains_mode_detail_and_notes() -> None:
     prompt = build_generate_prd_prompt(base_request())
     assert "【Mode A: 厳密 (Strict)】" in prompt
     assert "Detail: 要点を絞ったコンパクトなPRD" in prompt
-    assert "[Note #1] ID: n1 | Section: General | Title: (無題)\nContent:\nbody" in prompt
+    assert "[Note #1] ID: n1 | Title: (無題)\nContent:\nbody" in prompt
+    assert "Section:" not in prompt
 
 
 def test_generate_prd_prompt_defaults_to_suggest_and_standard() -> None:

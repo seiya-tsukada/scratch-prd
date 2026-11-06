@@ -10,7 +10,7 @@ from .helpers import create_user
 
 SUPABASE_API_ROLES = ["anon", "authenticated", "service_role"]
 TABLE_PRIVILEGES = ["SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE", "REFERENCES", "TRIGGER"]
-CONTENT_TABLES = {"section_templates", "sample_contents"}
+CONTENT_TABLES = {"sample_contents"}
 # 集計ビュー（postgres ロールで見る。アプリのロールにも権限を付けない）
 ANALYTICS_VIEWS = {"funnel_daily", "ai_fallback_daily"}
 
@@ -47,12 +47,10 @@ def test_all_expected_tables_exist(admin: psycopg.Connection) -> None:
         "email_login_tokens",
         "oauth_states",
         "projects",
-        "sections",
         "notes",
         "prd_documents",
         "prd_versions",
         "workspace_preferences",
-        "section_templates",
         "sample_contents",
         "events",
         "ai_generations",
@@ -157,9 +155,9 @@ def test_app_role_can_use_user_data_tables(app: psycopg.Connection) -> None:
 
 
 def test_app_role_reads_but_cannot_edit_content(app: psycopg.Connection) -> None:
-    assert app.execute("select count(*) from idea_ws.section_templates").fetchone() == (4,)
+    assert app.execute("select count(*) from idea_ws.sample_contents").fetchone() == (1,)
     with pytest.raises(errors.InsufficientPrivilege), app.transaction():
-        app.execute("insert into idea_ws.section_templates (name, position) values ('x', 9)")
+        app.execute("insert into idea_ws.sample_contents (version, is_active, content) values (99, false, '{}')")
     with pytest.raises(errors.InsufficientPrivilege), app.transaction():
         app.execute("update idea_ws.sample_contents set is_active = false")
 

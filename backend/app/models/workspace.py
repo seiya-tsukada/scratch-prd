@@ -14,9 +14,9 @@ from backend.app.models.ai import (
     PrdContradiction,
     PrdDetailLevel,
     PrdFact,
-    PrdGenerationMode,
     PrdOpenQuestion,
     PrdProposal,
+    StoredGenerationMode,
 )
 
 Name = Field(min_length=1, max_length=config.MAX_NAME_CHARS)
@@ -41,20 +41,8 @@ class Project(CamelModel):
     updated_at: datetime
 
 
-class Section(CamelModel):
-    id: UUID
-    project_id: UUID
-    user_id: UUID
-    name: str
-    position: int
-    icon: str | None = None
-    created_at: datetime
-    updated_at: datetime
-
-
 class Note(CamelModel):
     id: UUID
-    section_id: UUID
     project_id: UUID
     user_id: UUID
     title: str
@@ -69,7 +57,7 @@ class PrdBody(CamelModel):
 
     title: str = Field(max_length=config.MAX_NAME_CHARS)
     content: str = Field(default="", max_length=config.MAX_STORED_PRD_CHARS)
-    generation_mode: PrdGenerationMode
+    generation_mode: StoredGenerationMode
     detail_level: PrdDetailLevel = "standard"
     facts: list[PrdFact] = Field(default=[], max_length=config.MAX_PRD_ITEMS)
     proposals: list[PrdProposal] = Field(default=[], max_length=config.MAX_PRD_ITEMS)
@@ -115,7 +103,6 @@ class WorkspacePreferences(CamelModel):
 
 
 class ProjectData(CamelModel):
-    sections: list[Section]
     notes: list[Note]
     prds: list[PrdDocument]
     preferences: WorkspacePreferences
@@ -147,28 +134,7 @@ class ProjectUpdate(CamelModel):
         return None if value is None else _strip_name(value)
 
 
-class SectionCreate(CamelModel):
-    name: str = Name
-
-    _name = field_validator("name")(_strip_name)
-
-
-class SectionUpdate(CamelModel):
-    name: str | None = Field(default=None, min_length=1, max_length=config.MAX_NAME_CHARS)
-    icon: str | None = Field(default=None, max_length=50)
-
-    @field_validator("name")
-    @classmethod
-    def strip_name(cls, value: str | None) -> str | None:
-        return None if value is None else _strip_name(value)
-
-
-class SectionOrder(CamelModel):
-    ordered_ids: list[UUID] = Field(max_length=config.MAX_SECTIONS_PER_PROJECT)
-
-
 class NoteCreate(CamelModel):
-    section_id: UUID
     title: str = Field(default="", max_length=config.MAX_NAME_CHARS)
     content: str = Field(default="", max_length=config.MAX_STORED_NOTE_CHARS)
 
@@ -178,7 +144,6 @@ class NoteUpdate(CamelModel):
 
     title: str | None = Field(default=None, max_length=config.MAX_NAME_CHARS)
     content: str | None = Field(default=None, max_length=config.MAX_STORED_NOTE_CHARS)
-    section_id: UUID | None = None
     base_updated_at: datetime | None = None
 
 
@@ -268,7 +233,8 @@ class LegacyProjectImport(LegacyModel):
     """旧データ 1 プロジェクト分（Vercel のリクエスト上限に収めるため、プロジェクトごとに送る）"""
 
     project: LegacyProject
-    sections: list[LegacySection] = Field(default=[], max_length=config.MAX_SECTIONS_PER_PROJECT)
+    # 旧データのセクション。PRD セクションのメモを PRD に変換するためだけに使う
+    sections: list[LegacySection] = Field(default=[], max_length=config.MAX_LEGACY_SECTIONS)
     notes: list[LegacyNote] = Field(default=[], max_length=config.MAX_NOTES_PER_PROJECT)
     prds: list[LegacyPrd] = Field(default=[], max_length=config.MAX_PRDS_PER_PROJECT)
     preferences: LegacyPreferences | None = None
@@ -276,6 +242,5 @@ class LegacyProjectImport(LegacyModel):
 
 class ImportResult(CamelModel):
     project_id: UUID
-    sections: int
     notes: int
     prds: int

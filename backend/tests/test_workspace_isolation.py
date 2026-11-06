@@ -21,8 +21,6 @@ def alice(guest_client: TestClient) -> dict[str, Any]:
     data = snapshot(guest_client)
     return {
         "project": data["currentProjectId"],
-        "sections": [s["id"] for s in data["data"]["sections"]],
-        "section": data["data"]["sections"][0]["id"],
         "note": data["data"]["notes"][0]["id"],
         "prd": data["data"]["prds"][0]["id"],
     }
@@ -39,15 +37,11 @@ ATTACKS: list[tuple[str, str, Any]] = [
     ("get", "/api/projects/{alice[project]}/data", None),
     ("patch", "/api/projects/{alice[project]}", {"name": "pwned"}),
     ("delete", "/api/projects/{alice[project]}", None),
-    ("post", "/api/projects/{alice[project]}/sections", {"name": "pwned"}),
-    ("put", "/api/projects/{alice[project]}/sections/order", "alice_sections"),
-    ("patch", "/api/sections/{alice[section]}", {"name": "pwned"}),
-    ("delete", "/api/sections/{alice[section]}", None),
-    ("post", "/api/projects/{alice[project]}/notes", {"sectionId": "{alice[section]}"}),
-    ("post", "/api/projects/{bob[project]}/notes", {"sectionId": "{alice[section]}"}),
+    ("post", "/api/projects/{alice[project]}/notes", {"content": "pwned"}),
     ("patch", "/api/notes/{alice[note]}", {"content": "pwned"}),
-    ("patch", "/api/notes/{bob[note]}", {"sectionId": "{alice[section]}"}),
     ("delete", "/api/notes/{alice[note]}", None),
+    ("get", "/api/projects/{alice[project]}/prds", None),
+    ("get", "/api/prds/{alice[prd]}", None),
     ("post", "/api/projects/{alice[project]}/prds", PRD_BODY),
     ("put", "/api/prds/{alice[prd]}", PRD_BODY),
     ("delete", "/api/prds/{alice[prd]}", None),
@@ -79,7 +73,7 @@ def test_other_users_resources_are_not_found(
 ) -> None:
     ids = {"alice": alice, "bob": bob}
     before = snapshot(guest_client)
-    payload = {"orderedIds": alice["sections"]} if body == "alice_sections" else fill(body, ids)
+    payload = fill(body, ids)
 
     response = other_guest_client.request(method, path.format(**ids), json=payload)
 
@@ -106,6 +100,5 @@ def test_two_guests_get_separate_data(guest_client: TestClient, other_guest_clie
     assert not {n["id"] for n in a["data"]["notes"]} & {n["id"] for n in b["data"]["notes"]}
 
     pid = a["currentProjectId"]
-    section = a["data"]["sections"][0]["id"]
-    guest_client.post(f"/api/projects/{pid}/notes", json={"sectionId": section, "content": "alice only"})
+    guest_client.post(f"/api/projects/{pid}/notes", json={"content": "alice only"})
     assert "alice only" not in str(snapshot(other_guest_client))

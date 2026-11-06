@@ -1,9 +1,8 @@
-import { Note, PaneInfo, PrdDocument, Project, Section, WorkspacePreferences } from '../types';
+import { Note, PaneInfo, PrdDocument, Project, WorkspacePreferences } from '../types';
 import { ApiError, requestJson } from './apiClient';
 import type { LegacyProjectImport } from './legacyImport';
 
 export interface ProjectData {
-  sections: Section[];
   notes: Note[];
   prds: PrdDocument[];
   preferences: WorkspacePreferences;
@@ -32,11 +31,10 @@ export type PrdInput = Pick<
 export type PreferencesInput = Pick<WorkspacePreferences, 'paneCount' | 'panes' | 'activePaneId'>;
 
 /** メモの部分更新で送れる項目 */
-export type NoteFields = Partial<Pick<Note, 'title' | 'content' | 'sectionId'>>;
+export type NoteFields = Partial<Pick<Note, 'title' | 'content'>>;
 
 export interface ImportResult {
   projectId: string;
-  sections: number;
   notes: number;
   prds: number;
 }
@@ -56,19 +54,17 @@ export interface IWorkspaceRepository {
   updateProject(id: string, updates: Partial<Pick<Project, 'name' | 'description'>>): Promise<Project>;
   deleteProject(id: string): Promise<void>;
 
-  createSection(projectId: string, name: string): Promise<Section>;
-  updateSection(id: string, updates: Partial<Pick<Section, 'name' | 'icon'>>): Promise<Section>;
-  deleteSection(id: string): Promise<void>;
-  reorderSections(projectId: string, orderedIds: string[]): Promise<Section[]>;
-
-  createNote(projectId: string, sectionId: string, title?: string, content?: string): Promise<Note>;
+  createNote(projectId: string, title?: string, content?: string): Promise<Note>;
   /** baseUpdatedAt を渡すと、それより後に更新されていれば ConflictError */
   updateNote(id: string, updates: NoteFields, baseUpdatedAt?: string): Promise<Note>;
   deleteNote(id: string): Promise<void>;
 
+  /** プロジェクトの PRD（更新日時の降順） */
+  listPrds(projectId: string): Promise<PrdDocument[]>;
+  getPrd(id: string): Promise<PrdDocument>;
   createPrd(projectId: string, prd: PrdInput): Promise<PrdDocument>;
-  /** 現在の内容を版履歴に積んでから更新する */
-  savePrdVersion(id: string, prd: PrdInput): Promise<PrdDocument>;
+  /** 現在の内容を版履歴に積んでから更新する（編集・版の復元） */
+  updatePrd(id: string, prd: PrdInput): Promise<PrdDocument>;
   deletePrd(id: string): Promise<void>;
 
   savePreferences(projectId: string, prefs: PreferencesInput): Promise<WorkspacePreferences>;
@@ -119,24 +115,8 @@ export class ApiWorkspaceRepository implements IWorkspaceRepository {
     return requestJson(`/api/projects/${id}`, { method: 'DELETE' });
   }
 
-  createSection(projectId: string, name: string): Promise<Section> {
-    return requestJson(`/api/projects/${projectId}/sections`, { method: 'POST', body: { name } });
-  }
-
-  updateSection(id: string, updates: Partial<Pick<Section, 'name' | 'icon'>>): Promise<Section> {
-    return requestJson(`/api/sections/${id}`, { method: 'PATCH', body: updates });
-  }
-
-  deleteSection(id: string): Promise<void> {
-    return requestJson(`/api/sections/${id}`, { method: 'DELETE' });
-  }
-
-  reorderSections(projectId: string, orderedIds: string[]): Promise<Section[]> {
-    return requestJson(`/api/projects/${projectId}/sections/order`, { method: 'PUT', body: { orderedIds } });
-  }
-
-  createNote(projectId: string, sectionId: string, title = '', content = ''): Promise<Note> {
-    return requestJson(`/api/projects/${projectId}/notes`, { method: 'POST', body: { sectionId, title, content } });
+  createNote(projectId: string, title = '', content = ''): Promise<Note> {
+    return requestJson(`/api/projects/${projectId}/notes`, { method: 'POST', body: { title, content } });
   }
 
   async updateNote(id: string, updates: NoteFields, baseUpdatedAt?: string): Promise<Note> {
@@ -154,11 +134,19 @@ export class ApiWorkspaceRepository implements IWorkspaceRepository {
     return requestJson(`/api/notes/${id}`, { method: 'DELETE' });
   }
 
+  listPrds(projectId: string): Promise<PrdDocument[]> {
+    return requestJson(`/api/projects/${projectId}/prds`);
+  }
+
+  getPrd(id: string): Promise<PrdDocument> {
+    return requestJson(`/api/prds/${id}`);
+  }
+
   createPrd(projectId: string, prd: PrdInput): Promise<PrdDocument> {
     return requestJson(`/api/projects/${projectId}/prds`, { method: 'POST', body: toPrdBody(prd) });
   }
 
-  savePrdVersion(id: string, prd: PrdInput): Promise<PrdDocument> {
+  updatePrd(id: string, prd: PrdInput): Promise<PrdDocument> {
     return requestJson(`/api/prds/${id}`, { method: 'PUT', body: toPrdBody(prd) });
   }
 

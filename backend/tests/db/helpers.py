@@ -21,12 +21,3 @@ def create_project(conn: psycopg.Connection, user_id: UUID, name: str = "P") -> 
     ).fetchone()
     assert row is not None
     return UUID(str(row[0]))
-
-
-def create_section(conn: psycopg.Connection, user_id: UUID, project_id: UUID, name: str = "S") -> UUID:
-    row = conn.execute(
-        "insert into idea_ws.sections (user_id, project_id, name) values (%s, %s, %s) returning id",
-        (user_id, project_id, name),
-    ).fetchone()
-    assert row is not None
-    return UUID(str(row[0]))

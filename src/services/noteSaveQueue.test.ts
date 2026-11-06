@@ -5,7 +5,6 @@ import type { Note, SaveStatus } from '../types';
 
 const note = (id: string, updatedAt: string, extra: Partial<Note> = {}): Note => ({
   id,
-  sectionId: 's',
   projectId: 'p',
   userId: 'u',
   title: '',

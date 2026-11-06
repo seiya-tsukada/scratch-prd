@@ -63,8 +63,7 @@ Rules for regeneration:
 def build_generate_prd_prompt(request: GeneratePrdRequest) -> str:
     """複数メモから PRD を生成するプロンプト"""
     notes_content = "\n---\n".join(
-        f"[Note #{index + 1}] ID: {n.id} | Section: {n.section_name or 'General'} | "
-        f"Title: {n.title or '(無題)'}\nContent:\n{n.content}\n"
+        f"[Note #{index + 1}] ID: {n.id} | Title: {n.title or '(無題)'}\nContent:\n{n.content}\n"
         for index, n in enumerate(request.notes)
     )
 

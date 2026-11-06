@@ -19,7 +19,7 @@ import {
   Save,
   Layers,
 } from 'lucide-react';
-import { PrdDocument, Note, PrdGenerationMode } from '../types';
+import { PrdDocument, Note, StoredGenerationMode } from '../types';
 import { MarkdownRenderer } from '../utils/markdown';
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import { DATE_LOCALE, UNTITLED_NOTE_LABEL } from '../config/app';
@@ -43,10 +43,11 @@ import {
 
 type ViewerTab = 'preview' | 'inspector' | 'sources' | 'history';
 
-const MODE_BADGE_ICONS: Record<PrdGenerationMode, React.ComponentType<{ className?: string }>> = {
+const MODE_BADGE_ICONS: Record<StoredGenerationMode, React.ComponentType<{ className?: string }>> = {
   strict: ShieldCheck,
   suggest: CheckCircle2,
   expand: Lightbulb,
+  unknown: HelpCircle,
 };
 
 interface PrdViewerModalProps {
@@ -89,8 +90,9 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
     setIsEditingMarkdown(false);
   }, [prd.id, prd.version]);
 
-  // Source notes
-  const sourceNotes = notes.filter((n) => prd.sourceNoteIds?.includes(n.id));
+  // 生成元メモ（削除済みのメモは ID だけ残る）
+  const sourceIds = prd.sourceNoteIds ?? [];
+  const sourceEntries = sourceIds.map((id) => ({ id, note: notes.find((n) => n.id === id) }));
   const contradictions = prd.contradictions ?? [];
   const answeredCount = answeredDecisions(prd, notes).length;
 
@@ -149,7 +151,7 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
       Icon: Tag,
       badge: (prd.facts?.length || 0) + (prd.proposals?.length || 0) + (prd.openQuestions?.length || 0),
     },
-    { key: 'sources', label: `参照ノート一覧 (${sourceNotes.length})`, Icon: Layers },
+    { key: 'sources', label: `生成元メモ (${sourceIds.length})`, Icon: Layers },
     { key: 'history', label: `バージョン履歴 (${prd.versions?.length || 0})`, Icon: History },
   ];
   const ModeIcon = MODE_BADGE_ICONS[prd.generationMode] ?? MODE_BADGE_ICONS.suggest;
@@ -183,7 +185,7 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
                 <span>•</span>
                 <span>{new Date(prd.updatedAt).toLocaleString(DATE_LOCALE)}</span>
                 <span>•</span>
-                <span>参照ノート: {prd.sourceNoteIds?.length || 0}件</span>
+                <span>生成元メモ: {sourceIds.length}件</span>
               </div>
             </div>
           </div>
@@ -223,10 +225,10 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
               type="button"
               onClick={() => onRegenerate(prd.id)}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium text-zinc-700 dark:text-zinc-300 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:bg-zinc-50 dark:hover:bg-zinc-700 transition-colors"
-              title="このPRDを再生成・更新"
+              title="このPRDのメモから作り直す（新しいPRDとして保存）"
             >
               <RotateCw className="w-3.5 h-3.5 text-indigo-500" />
-              <span>更新 / 再生成</span>
+              <span>再生成</span>
             </button>
 
             <button
@@ -521,11 +523,12 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
           {activeTab === 'sources' && (
             <div className="max-w-4xl mx-auto space-y-4">
               <div className="text-xs text-zinc-500 mb-2">
-                この仕様書の生成元となった思考メモです。いつでもペインに呼び出して修正できます。
+                この仕様書の生成元となったメモです。クリックするとペインで開きます。
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {sourceNotes.map((note) => (
+                {sourceEntries.map(({ id, note }) =>
+                  note ? (
                   <div
                     key={note.id}
                     className="p-4 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 shadow-2xs flex flex-col justify-between"
@@ -557,10 +560,21 @@ export const PrdViewerModal: React.FC<PrdViewerModalProps> = ({
                       </button>
                     </div>
                   </div>
-                ))}
+                  ) : (
+                    <div
+                      key={id}
+                      className="p-4 rounded-xl bg-zinc-50 dark:bg-zinc-900/50 border border-dashed border-zinc-200 dark:border-zinc-800 text-xs text-zinc-400 flex items-center gap-2"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>削除済み</span>
+                    </div>
+                  )
+                )}
 
-                {sourceNotes.length === 0 && (
-                  <div className="text-xs text-zinc-400 italic p-4">参照元のメモが見つかりません</div>
+                {sourceEntries.length === 0 && (
+                  <div className="text-xs text-zinc-400 italic p-4">
+                    生成元のメモはありません（旧データから変換したPRDなど）
+                  </div>
                 )}
               </div>
             </div>

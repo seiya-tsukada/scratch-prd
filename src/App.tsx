@@ -16,7 +16,6 @@ import { SignupPrompt } from './components/SignupPrompt';
 import { finishOnboarding } from './services/session';
 import { shouldShowOnboarding } from './utils/onboarding';
 import {
-  DECISION_SECTION_NAME,
   answeredDecisions,
   buildPreviousPrd,
   decisionContent,
@@ -36,7 +35,6 @@ import {
   DEFAULT_ACTIVE_PANE_ID,
   DEFAULT_PANE_COUNT,
   FALLBACK_PROJECT_NAME,
-  INBOX_SECTION_KEYWORD,
   QUICK_CAPTURE_SHORTCUT_KEY,
   QUOTA_UPGRADE_EVENT,
   SIGNUP_PROMPT,
@@ -45,8 +43,9 @@ import {
   createEmptyPanes,
 } from './config/app';
 import { LAST_PROJECT_STORAGE_KEY } from './config/legacyStorage';
-import { getPrdModeMeta } from './config/prd';
-import { Project, Section, Note, PrdDocument, PaneCount, PaneInfo, SaveStatus } from './types';
+import { getPrdModeMeta, toGenerationMode } from './config/prd';
+import type { SidebarTab } from './components/Sidebar';
+import { Project, Note, PrdDocument, PaneCount, PaneInfo, SaveStatus } from './types';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
@@ -100,7 +99,6 @@ export default function App() {
   const currentProject = projects.find((p) => p.id === currentProjectId) || projects[0];
 
   // Active project data
-  const [sections, setSections] = useState<Section[]>([]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [prds, setPrds] = useState<PrdDocument[]>([]);
   // 競合で最新の内容を取り込んだメモ。値が変わると NotePane が入力中の内容を読み直す
@@ -113,11 +111,12 @@ export default function App() {
 
   // UI state
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>('notes');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
-  // PRD 生成ダイアログ。entry は開き方（ヘッダー・再生成 / 初回の案内）
+  // PRD 生成ダイアログ。entry は開き方（ヘッダー・再生成 / 初回の案内）、basePrdId は再生成の元にする PRD
   const [prdGenerator, setPrdGenerator] = useState<{
     entry: 'default' | 'onboarding';
-    targetPrdId: string | null;
+    basePrdId: string | null;
   } | null>(null);
   const [activePrdId, setActivePrdId] = useState<string | null>(null);
   // 直前の PRD 生成が内蔵ジェネレータによるものだった場合に、ビューアで知らせる
@@ -152,7 +151,7 @@ export default function App() {
       if (unsaved.title === undefined && unsaved.content === undefined) return;
       const title = withSuffix((unsaved.title ?? latest.title) || UNTITLED_SHORT_LABEL, CONFLICT_COPY_SUFFIX);
       workspaceRepository
-        .createNote(latest.projectId, latest.sectionId, title, unsaved.content ?? latest.content)
+        .createNote(latest.projectId, title, unsaved.content ?? latest.content)
         .then((copy) => {
           if (currentProjectRef.current?.id === copy.projectId) {
             saveQueueRef.current?.track([copy]);
@@ -179,7 +178,6 @@ export default function App() {
     (data: ProjectData) => {
       const { preferences: prefs } = data;
       saveQueue.track(data.notes);
-      setSections(data.sections);
       setNotes(data.notes);
       setPrds(data.prds);
       setPaneCount(prefs.paneCount);
@@ -195,7 +193,6 @@ export default function App() {
   );
 
   const clearProjectData = () => {
-    setSections([]);
     setNotes([]);
     setPrds([]);
     setPanes(createEmptyPanes());
@@ -288,20 +285,10 @@ export default function App() {
     setNotes((prev) => [note, ...prev]);
   };
 
-  /** 新規メモの保存先（Inbox、無ければ先頭のセクション） */
-  const findInboxSectionId = (): string | undefined =>
-    sections.find((s) => s.name.toLowerCase().includes(INBOX_SECTION_KEYWORD))?.id || sections[0]?.id;
-
-  const handleCreateNoteInPane = async (paneIndex: number, sectionId?: string) => {
+  const handleCreateNoteInPane = async (paneIndex: number) => {
     if (!currentProject) return;
-    const targetSectionId = sectionId || findInboxSectionId();
-    if (!targetSectionId) {
-      setErrorMessage('メモを作成するには、先にセクションを作成してください。');
-      return;
-    }
-
     try {
-      const newNote = await workspaceRepository.createNote(currentProject.id, targetSectionId);
+      const newNote = await workspaceRepository.createNote(currentProject.id);
       addNote(newNote);
       setPanes((prev) => {
         const next = [...prev];
@@ -316,16 +303,15 @@ export default function App() {
   };
 
   /** サイドバー / ショートカットからの即時メモ作成 */
-  const handleFastCapture = (sectionId?: string) => {
-    void handleCreateNoteInPane(getActivePaneIndex(), sectionId);
+  const handleFastCapture = () => {
+    setSidebarTab('notes');
+    void handleCreateNoteInPane(getActivePaneIndex());
   };
 
   /** 画面は即座に更新し、保存はキューに任せる */
   const handleUpdateNote = (noteId: string, updates: Partial<Note>) => {
-    const { title, content, sectionId } = updates;
-    const fields = Object.fromEntries(
-      Object.entries({ title, content, sectionId }).filter(([, value]) => value !== undefined)
-    );
+    const { title, content } = updates;
+    const fields = Object.fromEntries(Object.entries({ title, content }).filter(([, value]) => value !== undefined));
     setNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, ...fields } : n)));
     saveQueue.enqueue(noteId, fields);
   };
@@ -356,7 +342,6 @@ export default function App() {
     try {
       const dup = await workspaceRepository.createNote(
         currentProject.id,
-        target.sectionId,
         withSuffix(target.title || UNTITLED_SHORT_LABEL, DUPLICATE_SUFFIX),
         target.content
       );
@@ -365,10 +350,6 @@ export default function App() {
     } catch (e) {
       showError(e);
     }
-  };
-
-  const handleMoveNote = (noteId: string, targetSectionId: string) => {
-    handleUpdateNote(noteId, { sectionId: targetSectionId });
   };
 
   // --- Projects ---
@@ -411,45 +392,17 @@ export default function App() {
     }
   };
 
-  // --- Sections ---
-  const handleCreateSection = async (name: string) => {
-    if (!currentProject) return;
-    try {
-      const section = await workspaceRepository.createSection(currentProject.id, name);
-      setSections((prev) => [...prev, section]);
-    } catch (e) {
-      showError(e);
-    }
-  };
-
-  const handleRenameSection = async (sectionId: string, newName: string) => {
-    try {
-      const updated = await workspaceRepository.updateSection(sectionId, { name: newName });
-      setSections((prev) => prev.map((s) => (s.id === updated.id ? updated : s)));
-    } catch (e) {
-      showError(e);
-    }
-  };
-
-  const handleDeleteSection = async (sectionId: string) => {
-    try {
-      // セクション内のメモはサーバー側でまとめて削除される
-      await workspaceRepository.deleteSection(sectionId);
-      setSections((prev) => prev.filter((s) => s.id !== sectionId));
-      removeNotesLocally(notes.filter((n) => n.sectionId === sectionId).map((n) => n.id));
-    } catch (e) {
-      showError(e);
-    }
-  };
-
   // --- PRD ---
   const upsertPrd = (prd: PrdDocument) =>
     setPrds((prev) => [prd, ...prev.filter((p) => p.id !== prd.id)]);
 
-  /** sourceNotes から PRD を生成して保存し、ビューアで開く */
+  /**
+   * sourceNotes から PRD を生成して新しい PRD として保存し、PRD タブに切り替えてビューアで開く。
+   * basePrdId（再生成の元）があれば、その PRD の要約を AI に渡す。元の PRD は変更しない
+   */
   const generatePrdFromNotes = async (sourceNotes: Note[], params: Omit<PrdGenerateParams, 'selectedNoteIds'>) => {
     if (!currentProject) return;
-    const existingPrd = params.targetPrdId ? prds.find((p) => p.id === params.targetPrdId) : undefined;
+    const basePrd = params.basePrdId ? prds.find((p) => p.id === params.basePrdId) : undefined;
 
     // 本文以外（タイトル・名前）は文脈として渡すだけなので、上限を超える分は切り詰める
     const clipTitle = (text: string | undefined) => text?.slice(0, AI_INPUT_LIMITS.MAX_TITLE_CHARS);
@@ -461,14 +414,12 @@ export default function App() {
         id: n.id,
         title: clipTitle(n.title) ?? '',
         content: n.content,
-        sectionName: clipTitle(sections.find((s) => s.id === n.sectionId)?.name),
       })),
       // 再生成では本文ではなく、前回の構成・事実・未決事項と、未決事項への回答（決定事項）を渡す
-      previousPrd: existingPrd ? buildPreviousPrd(existingPrd, answeredDecisions(existingPrd, notes)) : undefined,
+      previousPrd: basePrd ? buildPreviousPrd(basePrd, answeredDecisions(basePrd, notes)) : undefined,
     });
 
-    const title =
-      existingPrd?.title || `${currentProject.name} 仕様書 (${getPrdModeMeta(params.mode).titleLabel}版)`;
+    const title = basePrd?.title || `${currentProject.name} 仕様書 (${getPrdModeMeta(params.mode).titleLabel}版)`;
     const input: PrdInput = {
       title: clipTitle(title) ?? '',
       content: data.markdown,
@@ -481,25 +432,16 @@ export default function App() {
       contradictions: data.contradictions,
     };
 
-    const savedPrd = existingPrd
-      ? await workspaceRepository.savePrdVersion(existingPrd.id, input)
-      : await workspaceRepository.createPrd(currentProject.id, input);
+    const savedPrd = await workspaceRepository.createPrd(currentProject.id, input);
 
     upsertPrd(savedPrd);
     setPrdFallback(data.usedFallback ? { prdId: savedPrd.id, reason: data.fallbackReason ?? 'ai_error' } : null);
+    setSidebarTab('prds');
     setActivePrdId(savedPrd.id);
-    if (!existingPrd) offerSignup('first_prd');
+    if (!basePrd) offerSignup('first_prd');
   };
 
-  // --- 未決事項への回答（「決定事項」セクションのメモ）と、回答を反映した再生成 ---
-  const ensureDecisionSection = async (projectId: string): Promise<Section> => {
-    const existing = sections.find((s) => s.name === DECISION_SECTION_NAME);
-    if (existing) return existing;
-    const created = await workspaceRepository.createSection(projectId, DECISION_SECTION_NAME);
-    setSections((prev) => [...prev, created]);
-    return created;
-  };
-
+  // --- 未決事項への回答（タイトルが「決定: 〜」のメモ）と、回答を反映した再生成 ---
   const handleAnswerQuestion = async (question: string, answer: string) => {
     if (!currentProject) return;
     const content = decisionContent(question, answer);
@@ -509,8 +451,7 @@ export default function App() {
       // ペインで開いていれば入力欄も読み直す
       setNoteRevisions((prev) => ({ ...prev, [existing.id]: (prev[existing.id] ?? 0) + 1 }));
     } else {
-      const section = await ensureDecisionSection(currentProject.id);
-      addNote(await workspaceRepository.createNote(currentProject.id, section.id, decisionTitle(question), content));
+      addNote(await workspaceRepository.createNote(currentProject.id, decisionTitle(question), content));
     }
     track({ name: 'open_question_answered' });
   };
@@ -522,9 +463,9 @@ export default function App() {
     const decisionNoteIds = new Set(decisions.map((d) => d.note.id));
     const sourceNotes = notes.filter((n) => prd.sourceNoteIds?.includes(n.id) || decisionNoteIds.has(n.id));
     await generatePrdFromNotes(sourceNotes, {
-      mode: prd.generationMode,
+      mode: toGenerationMode(prd.generationMode),
       detailLevel: prd.detailLevel,
-      targetPrdId: prd.id,
+      basePrdId: prd.id,
     });
     track({ name: 'prd_regenerated_with_answers', properties: { answers: decisions.length } });
   };
@@ -547,7 +488,7 @@ export default function App() {
 
   useEffect(() => {
     if (loadState === 'ready' && showOnboarding) {
-      setPrdGenerator({ entry: 'onboarding', targetPrdId: null });
+      setPrdGenerator({ entry: 'onboarding', basePrdId: null });
       track({ name: 'onboarding_started' });
     }
   }, [loadState, showOnboarding]);
@@ -558,13 +499,10 @@ export default function App() {
     finishOnboarding(result).catch((e) => console.warn('案内の状態を保存できませんでした', e));
   };
 
-  /** 貼り付けた内容を Inbox のメモにし、そのメモだけから PRD を作る */
+  /** 貼り付けた内容をメモとして保存し、そのメモだけから PRD を作る */
   const handleGeneratePrdFromText = async ({ title, content, mode, detailLevel }: PrdGenerateFromTextParams) => {
     if (!currentProject) return;
-    const sectionId = findInboxSectionId();
-    if (!sectionId) throw new Error('メモを保存するセクションがありません。先にセクションを作成してください。');
-
-    const note = await workspaceRepository.createNote(currentProject.id, sectionId, title, content);
+    const note = await workspaceRepository.createNote(currentProject.id, title, content);
     addNote(note);
     handleOpenNoteInActivePane(note.id);
     await generatePrdFromNotes([note], { mode, detailLevel });
@@ -580,7 +518,7 @@ export default function App() {
     const existing = prds.find((p) => p.id === prdId);
     if (!existing) return;
     try {
-      upsertPrd(await workspaceRepository.savePrdVersion(prdId, toPrdInput({ ...existing, ...updates })));
+      upsertPrd(await workspaceRepository.updatePrd(prdId, toPrdInput({ ...existing, ...updates })));
     } catch (e) {
       showError(e);
     }
@@ -596,10 +534,10 @@ export default function App() {
     }
   };
 
-  const openPrdGenerator = (targetPrdId: string | null) => {
+  const openPrdGenerator = (basePrdId: string | null) => {
     // ビューアの上に重ねると操作できないため閉じる（生成後に結果のビューアを開く）
     closePrdViewer();
-    setPrdGenerator({ entry: 'default', targetPrdId });
+    setPrdGenerator({ entry: 'default', basePrdId });
   };
 
   const closePrdGenerator = (generated: boolean) => {
@@ -677,7 +615,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [panes, activePaneId, sections, currentProject]);
+  }, [panes, activePaneId, currentProject]);
 
   if (loadState !== 'ready') {
     return (
@@ -774,20 +712,17 @@ export default function App() {
 
       <div className="flex-1 flex min-h-0 overflow-hidden">
         <Sidebar
-          sections={sections}
           notes={notes}
           prds={prds}
           panes={panes.slice(0, paneCount)}
           activePaneId={activePaneId}
           isOpen={sidebarOpen}
+          activeTab={sidebarTab}
+          onChangeTab={setSidebarTab}
           onSelectNote={handleOpenNoteInActivePane}
           onCreateNote={handleFastCapture}
           onDeleteNote={handleDeleteNote}
           onDuplicateNote={handleDuplicateNote}
-          onMoveNote={handleMoveNote}
-          onCreateSection={handleCreateSection}
-          onRenameSection={handleRenameSection}
-          onDeleteSection={handleDeleteSection}
           onOpenPrd={setActivePrdId}
         />
 
@@ -795,7 +730,6 @@ export default function App() {
           paneCount={paneCount}
           panes={panes}
           notes={notes}
-          sections={sections}
           noteRevisions={noteRevisions}
           activePaneId={activePaneId}
           onActivatePane={handleActivatePane}
@@ -803,17 +737,15 @@ export default function App() {
           onCreateNoteInPane={handleCreateNoteInPane}
           onUpdateNote={handleUpdateNote}
           onDeleteNote={handleDeleteNote}
-          onMoveNote={handleMoveNote}
         />
       </div>
 
       <PrdGeneratorModal
         isOpen={prdGenerator !== null}
         notes={notes}
-        sections={sections}
         existingPrds={prds}
         projectName={projectName}
-        defaultTargetPrdId={prdGenerator?.targetPrdId}
+        basePrdId={prdGenerator?.basePrdId}
         initialSource={prdGenerator?.entry === 'onboarding' || notes.length === 0 ? 'paste' : 'notes'}
         isOnboarding={prdGenerator?.entry === 'onboarding'}
         onClose={closePrdGenerator}

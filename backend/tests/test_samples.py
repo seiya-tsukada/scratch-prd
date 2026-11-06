@@ -6,6 +6,7 @@ from typing import Any
 
 import psycopg
 from fastapi.testclient import TestClient
+from psycopg.types.json import Jsonb
 
 from .conftest import login_guest
 
@@ -22,7 +23,6 @@ def test_guest_gets_a_copy_of_the_active_sample(client: TestClient, db_admin: ps
         return int(row[0])
 
     assert count("projects") == 1
-    assert count("sections") == len(content["sections"])
     assert count("notes") == len(content["notes"])
     assert count("prd_documents") == len(content["prds"])
     assert count("workspace_preferences") == 1
@@ -65,6 +65,38 @@ def test_each_guest_gets_independent_copies(client: TestClient, db_admin: psycop
         (first, second),
     ).fetchone()
     assert shared == (0,)
+
+
+def test_old_sample_format_with_sections_is_accepted(client: TestClient, db_admin: psycopg.Connection[Any]) -> None:
+    """古い形式（sections / notes[].sectionKey つき）のサンプルでも、セクションを無視して複製する"""
+    old = {
+        "project": {"name": "旧サンプル"},
+        "sections": [{"key": "inbox", "name": "Inbox", "icon": "Inbox", "position": 0}],
+        "notes": [
+            {
+                "key": "n1",
+                "sectionKey": "inbox",
+                "title": "T",
+                "content": "C",
+                "position": 0,
+                "createdHoursAgo": 2,
+                "updatedHoursAgo": 1,
+            }
+        ],
+        "prds": [],
+        "preferences": {"paneCount": 1, "panes": [{"id": "pane-0", "noteKey": "n1"}], "activePaneId": "pane-0"},
+    }
+    db_admin.execute("update idea_ws.sample_contents set is_active = false")
+    db_admin.execute(
+        "insert into idea_ws.sample_contents (version, is_active, content) values (99, true, %s)", (Jsonb(old),)
+    )
+    try:
+        user_id = login_guest(client)["id"]
+        notes = db_admin.execute("select title, content from idea_ws.notes where user_id = %s", (user_id,)).fetchall()
+        assert notes == [("T", "C")]
+    finally:
+        db_admin.execute("delete from idea_ws.sample_contents where version = 99")
+        db_admin.execute("update idea_ws.sample_contents set is_active = true where version = 1")
 
 
 def test_guest_creation_without_active_sample_still_works(
