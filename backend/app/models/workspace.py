@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import ConfigDict, Field, field_validator
@@ -48,6 +49,21 @@ class Note(CamelModel):
     title: str
     content: str
     position: int
+    # 付いているタグ（付けた順）
+    tag_ids: list[UUID] = []
+    created_at: datetime
+    updated_at: datetime
+
+
+TagColor = Literal["gray", "red", "amber", "green", "teal", "blue", "indigo", "purple", "pink"]
+
+
+class Tag(CamelModel):
+    id: UUID
+    project_id: UUID
+    user_id: UUID
+    name: str
+    color: TagColor | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -104,6 +120,7 @@ class WorkspacePreferences(CamelModel):
 
 class ProjectData(CamelModel):
     notes: list[Note]
+    tags: list[Tag]
     prds: list[PrdDocument]
     preferences: WorkspacePreferences
 
@@ -145,6 +162,34 @@ class NoteUpdate(CamelModel):
     title: str | None = Field(default=None, max_length=config.MAX_NAME_CHARS)
     content: str | None = Field(default=None, max_length=config.MAX_STORED_NOTE_CHARS)
     base_updated_at: datetime | None = None
+
+
+TagName = Field(min_length=1, max_length=config.MAX_TAG_NAME_CHARS)
+
+
+class TagCreate(CamelModel):
+    name: str = TagName
+    color: TagColor | None = None
+
+    _name = field_validator("name")(_strip_name)
+
+
+class TagUpdate(CamelModel):
+    """送った項目だけ更新する。color に null を送ると色を外す"""
+
+    name: str | None = Field(default=None, min_length=1, max_length=config.MAX_TAG_NAME_CHARS)
+    color: TagColor | None = None
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str | None) -> str | None:
+        return None if value is None else _strip_name(value)
+
+
+class NoteTagsSave(CamelModel):
+    """メモに付けるタグの全体（付け外しはこの一覧で置き換える）"""
+
+    tag_ids: list[UUID] = Field(max_length=config.MAX_TAGS_PER_NOTE)
 
 
 class PrdSave(PrdBody):

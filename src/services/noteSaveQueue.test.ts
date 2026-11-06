@@ -10,6 +10,7 @@ const note = (id: string, updatedAt: string, extra: Partial<Note> = {}): Note =>
   title: '',
   content: '',
   position: 0,
+  tagIds: [],
   createdAt: updatedAt,
   updatedAt,
   ...extra,

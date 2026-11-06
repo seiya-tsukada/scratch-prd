@@ -150,6 +150,118 @@ def test_note_in_unknown_project_is_not_found(guest_client: TestClient) -> None:
     assert guest_client.post(f"/api/projects/{unknown}/notes", json={"content": "x"}).status_code == 404
 
 
+def create_tag(client: TestClient, project_id: str, name: str, **extra: Any) -> dict[str, Any]:
+    response = client.post(f"/api/projects/{project_id}/tags", json={"name": name, **extra})
+    assert response.status_code == 201, response.text
+    body: dict[str, Any] = response.json()
+    return body
+
+
+def test_tag_crud_and_unique_name(guest_client: TestClient) -> None:
+    pid = bootstrap(guest_client)["currentProjectId"]
+    assert bootstrap(guest_client)["data"]["tags"] == []
+
+    tag = create_tag(guest_client, pid, "  MVP  ", color="indigo")
+    assert tag["name"] == "MVP" and tag["color"] == "indigo" and tag["projectId"] == pid
+
+    # 大文字小文字を区別せずユニーク。既存のタグを返す
+    duplicate = guest_client.post(f"/api/projects/{pid}/tags", json={"name": "mvp"})
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"]["code"] == "tag_exists"
+    assert duplicate.json()["detail"]["tag"]["id"] == tag["id"]
+
+    other = create_tag(guest_client, pid, "UX")
+    assert guest_client.patch(f"/api/tags/{other['id']}", json={"name": "Mvp"}).status_code == 409
+
+    renamed = guest_client.patch(f"/api/tags/{tag['id']}", json={"name": "Core"}).json()
+    assert renamed["name"] == "Core" and renamed["color"] == "indigo"
+    # 大文字小文字だけの変更は自分自身と重ならない
+    assert guest_client.patch(f"/api/tags/{tag['id']}", json={"name": "CORE"}).json()["name"] == "CORE"
+    # color: null で色を外す。送らなければ変えない
+    assert "color" not in guest_client.patch(f"/api/tags/{tag['id']}", json={"color": None}).json()
+    assert guest_client.patch(f"/api/tags/{other['id']}", json={"color": "red"}).json()["color"] == "red"
+
+    tags = bootstrap(guest_client)["data"]["tags"]
+    assert [t["name"] for t in tags] == ["CORE", "UX"]
+
+    assert guest_client.delete(f"/api/tags/{tag['id']}").status_code == 204
+    assert guest_client.delete(f"/api/tags/{tag['id']}").status_code == 404
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"name": ""},
+        {"name": "   "},
+        {"name": "x" * (config.MAX_TAG_NAME_CHARS + 1)},
+        {"name": "ok", "color": "rainbow"},
+        {},
+    ],
+)
+def test_tag_validation(guest_client: TestClient, body: dict[str, Any]) -> None:
+    pid = bootstrap(guest_client)["currentProjectId"]
+    assert guest_client.post(f"/api/projects/{pid}/tags", json=body).status_code == 422
+
+
+def test_note_tags_are_replaced_and_removed_with_the_tag(guest_client: TestClient) -> None:
+    data = bootstrap(guest_client)
+    pid = data["currentProjectId"]
+    note = data["data"]["notes"][0]
+    a = create_tag(guest_client, pid, "A")
+    b = create_tag(guest_client, pid, "B")
+
+    tagged = guest_client.put(f"/api/notes/{note['id']}/tags", json={"tagIds": [b["id"], a["id"], b["id"]]})
+    assert tagged.status_code == 200, tagged.text
+    # 重複は除き、付けた順を保つ。本文の自動保存の競合判定に影響しないよう updated_at は変えない
+    assert tagged.json()["tagIds"] == [b["id"], a["id"]]
+    assert tagged.json()["updatedAt"] == note["updatedAt"]
+
+    notes = {n["id"]: n for n in bootstrap(guest_client)["data"]["notes"]}
+    assert notes[note["id"]]["tagIds"] == [b["id"], a["id"]]
+    # 本文の更新でもタグは返る
+    patched = guest_client.patch(f"/api/notes/{note['id']}", json={"content": "x"}).json()
+    assert patched["tagIds"] == [b["id"], a["id"]]
+
+    assert guest_client.put(f"/api/notes/{note['id']}/tags", json={"tagIds": [a["id"]]}).json()["tagIds"] == [a["id"]]
+
+    # タグを消すとメモからの紐付けも消える
+    assert guest_client.delete(f"/api/tags/{a['id']}").status_code == 204
+    notes = {n["id"]: n for n in bootstrap(guest_client)["data"]["notes"]}
+    assert notes[note["id"]]["tagIds"] == []
+
+
+def test_note_tags_must_be_in_the_same_project(guest_client: TestClient) -> None:
+    data = bootstrap(guest_client)
+    note = data["data"]["notes"][0]
+    other = create_project(guest_client, "Other")
+    foreign = create_tag(guest_client, other["id"], "elsewhere")
+    response = guest_client.put(f"/api/notes/{note['id']}/tags", json={"tagIds": [foreign["id"]]})
+    assert response.status_code == 404
+    unknown = "00000000-0000-0000-0000-000000000000"
+    assert guest_client.put(f"/api/notes/{note['id']}/tags", json={"tagIds": [unknown]}).status_code == 404
+
+
+def test_tag_limits(guest_client: TestClient, db_admin: psycopg.Connection[Any]) -> None:
+    data = bootstrap(guest_client)
+    pid = data["currentProjectId"]
+    note = data["data"]["notes"][0]
+    too_many = [f"00000000-0000-0000-0000-{i:012d}" for i in range(config.MAX_TAGS_PER_NOTE + 1)]
+    assert guest_client.put(f"/api/notes/{note['id']}/tags", json={"tagIds": too_many}).status_code == 422
+
+    db_admin.execute(
+        "insert into idea_ws.tags (user_id, project_id, name) "
+        "select user_id, id, 't' || g from idea_ws.projects, generate_series(1, %s) g where id = %s",
+        (config.MAX_TAGS_PER_PROJECT, pid),
+    )
+    response = guest_client.post(f"/api/projects/{pid}/tags", json={"name": "one more"})
+    assert response.status_code == 422
+    assert response.json()["detail"] == {
+        "code": "limit_exceeded",
+        "resource": "tags",
+        "limit": config.MAX_TAGS_PER_PROJECT,
+    }
+
+
 def test_note_conflict_detection(guest_client: TestClient) -> None:
     note = bootstrap(guest_client)["data"]["notes"][0]
 

@@ -101,7 +101,8 @@ export type ApiErrorCode =
   | 'already_registered'
   | 'invalid_credentials'
   | 'invalid_password'
-  | 'guest_data_exists';
+  | 'guest_data_exists'
+  | 'tag_exists';
 
 export interface QuotaExceededDetail {
   code: 'quota_exceeded';
