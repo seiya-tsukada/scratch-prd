@@ -15,7 +15,7 @@ from backend.app import config
 from backend.app.db import create_pool
 from backend.app.mock import router as mock_router
 from backend.app.routers import account, ai, auth, cron, events, workspace
-from backend.app.services.workspace_repo import ConflictError, LimitExceededError, NotFoundError
+from backend.app.services.workspace_repo import ConflictError, LimitExceededError, NotFoundError, TagExistsError
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +87,12 @@ async def not_found(request: Request, exc: Exception) -> JSONResponse:
 async def conflict(request: Request, exc: ConflictError) -> JSONResponse:
     note = exc.current.model_dump(by_alias=True, mode="json")
     return JSONResponse(status_code=409, content={"detail": {"code": "conflict", "note": note}})
+
+
+@app.exception_handler(TagExistsError)
+async def tag_exists(request: Request, exc: TagExistsError) -> JSONResponse:
+    tag = exc.existing.model_dump(by_alias=True, mode="json", exclude_none=True)
+    return JSONResponse(status_code=409, content={"detail": {"code": "tag_exists", "tag": tag}})
 
 
 @app.exception_handler(LimitExceededError)

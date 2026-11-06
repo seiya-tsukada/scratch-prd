@@ -1,9 +1,10 @@
-import { Note, PaneInfo, PrdDocument, Project, WorkspacePreferences } from '../types';
+import { Note, PaneInfo, PrdDocument, Project, Tag, TagColor, WorkspacePreferences } from '../types';
 import { ApiError, requestJson } from './apiClient';
 import type { LegacyProjectImport } from './legacyImport';
 
 export interface ProjectData {
   notes: Note[];
+  tags: Tag[];
   prds: PrdDocument[];
   preferences: WorkspacePreferences;
 }
@@ -39,6 +40,13 @@ export interface ImportResult {
   prds: number;
 }
 
+/** 同じ名前（大文字小文字を区別しない）のタグがすでにある（existing は既存のタグ） */
+export class TagExistsError extends Error {
+  constructor(readonly existing: Tag) {
+    super(`タグ「${existing.name}」はすでにあります。`);
+  }
+}
+
 /** メモが baseUpdatedAt より後に他で更新されていた（latest は最新のメモ） */
 export class ConflictError extends Error {
   constructor(readonly latest: Note) {
@@ -58,6 +66,15 @@ export interface IWorkspaceRepository {
   /** baseUpdatedAt を渡すと、それより後に更新されていれば ConflictError */
   updateNote(id: string, updates: NoteFields, baseUpdatedAt?: string): Promise<Note>;
   deleteNote(id: string): Promise<void>;
+  /** メモのタグを tagIds で置き換える（メモの updatedAt は変わらない） */
+  setNoteTags(noteId: string, tagIds: string[]): Promise<Note>;
+
+  /** 同じ名前のタグがあれば TagExistsError */
+  createTag(projectId: string, name: string, color?: TagColor): Promise<Tag>;
+  /** color に null を渡すと色を外す */
+  updateTag(id: string, updates: { name?: string; color?: TagColor | null }): Promise<Tag>;
+  /** メモからの紐付けも消える */
+  deleteTag(id: string): Promise<void>;
 
   /** プロジェクトの PRD（更新日時の降順） */
   listPrds(projectId: string): Promise<PrdDocument[]>;
@@ -91,6 +108,17 @@ const toPrdBody = (prd: PrdInput): PrdInput => ({
   openQuestions: prd.openQuestions,
   contradictions: prd.contradictions,
 });
+
+const rethrowTagExists = async <T>(request: () => Promise<T>): Promise<T> => {
+  try {
+    return await request();
+  } catch (e) {
+    if (e instanceof ApiError && e.code === 'tag_exists') {
+      throw new TagExistsError((e.detail as { tag: Tag }).tag);
+    }
+    throw e;
+  }
+};
 
 export class ApiWorkspaceRepository implements IWorkspaceRepository {
   async bootstrap(projectId?: string): Promise<Bootstrap> {
@@ -132,6 +160,24 @@ export class ApiWorkspaceRepository implements IWorkspaceRepository {
 
   deleteNote(id: string): Promise<void> {
     return requestJson(`/api/notes/${id}`, { method: 'DELETE' });
+  }
+
+  setNoteTags(noteId: string, tagIds: string[]): Promise<Note> {
+    return requestJson(`/api/notes/${noteId}/tags`, { method: 'PUT', body: { tagIds } });
+  }
+
+  async createTag(projectId: string, name: string, color?: TagColor): Promise<Tag> {
+    return rethrowTagExists(() =>
+      requestJson<Tag>(`/api/projects/${projectId}/tags`, { method: 'POST', body: { name, color } })
+    );
+  }
+
+  async updateTag(id: string, updates: { name?: string; color?: TagColor | null }): Promise<Tag> {
+    return rethrowTagExists(() => requestJson<Tag>(`/api/tags/${id}`, { method: 'PATCH', body: updates }));
+  }
+
+  deleteTag(id: string): Promise<void> {
+    return requestJson(`/api/tags/${id}`, { method: 'DELETE' });
   }
 
   listPrds(projectId: string): Promise<PrdDocument[]> {

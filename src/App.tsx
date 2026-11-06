@@ -25,7 +25,7 @@ import {
 import { useSession } from './components/GuestGate';
 import { isSnoozed, signupPromptStorage, SignupPromptTrigger } from './utils/signupPrompt';
 import { track } from './services/analytics';
-import { ProjectData, PrdInput, workspaceRepository } from './services/apiWorkspaceRepository';
+import { ProjectData, PrdInput, TagExistsError, workspaceRepository } from './services/apiWorkspaceRepository';
 import { NoteSaveQueue } from './services/noteSaveQueue';
 import { clearLegacyData, findLegacyProjects, LegacyProjectSummary, removeLegacyProject } from './services/legacyImport';
 import { generatePrd } from './services/apiClient';
@@ -45,7 +45,9 @@ import {
 import { LAST_PROJECT_STORAGE_KEY } from './config/legacyStorage';
 import { getPrdModeMeta, toGenerationMode } from './config/prd';
 import type { SidebarTab } from './components/Sidebar';
-import { Project, Note, PrdDocument, PaneCount, PaneInfo, SaveStatus } from './types';
+import { Project, Note, PrdDocument, PaneCount, PaneInfo, SaveStatus, Tag, TagColor } from './types';
+import { TagManagerDialog } from './components/TagManagerDialog';
+import { sortTags } from './utils/tags';
 
 type LoadState = 'loading' | 'ready' | 'error';
 
@@ -100,6 +102,7 @@ export default function App() {
 
   // Active project data
   const [notes, setNotes] = useState<Note[]>([]);
+  const [tags, setTags] = useState<Tag[]>([]);
   const [prds, setPrds] = useState<PrdDocument[]>([]);
   // 競合で最新の内容を取り込んだメモ。値が変わると NotePane が入力中の内容を読み直す
   const [noteRevisions, setNoteRevisions] = useState<Record<string, number>>({});
@@ -112,6 +115,7 @@ export default function App() {
   // UI state
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('notes');
+  const [isTagManagerOpen, setIsTagManagerOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
   // PRD 生成ダイアログ。entry は開き方（ヘッダー・再生成 / 初回の案内）、basePrdId は再生成の元にする PRD
   const [prdGenerator, setPrdGenerator] = useState<{
@@ -179,6 +183,7 @@ export default function App() {
       const { preferences: prefs } = data;
       saveQueue.track(data.notes);
       setNotes(data.notes);
+      setTags(sortTags(data.tags));
       setPrds(data.prds);
       setPaneCount(prefs.paneCount);
 
@@ -194,6 +199,7 @@ export default function App() {
 
   const clearProjectData = () => {
     setNotes([]);
+    setTags([]);
     setPrds([]);
     setPanes(createEmptyPanes());
   };
@@ -345,11 +351,47 @@ export default function App() {
         withSuffix(target.title || UNTITLED_SHORT_LABEL, DUPLICATE_SUFFIX),
         target.content
       );
-      addNote(dup);
+      // タグも複製する
+      addNote(target.tagIds.length > 0 ? await workspaceRepository.setNoteTags(dup.id, target.tagIds) : dup);
       handleOpenNoteInActivePane(dup.id);
     } catch (e) {
       showError(e);
     }
+  };
+
+  // --- タグ（付け外し・作成・名前変更・色・削除は API の結果を待ってから画面に反映する） ---
+  /** メモのタグを置き換える。本文の自動保存とぶつからないよう、tagIds だけを反映する */
+  const handleSetNoteTags = async (noteId: string, tagIds: string[]) => {
+    const saved = await workspaceRepository.setNoteTags(noteId, tagIds);
+    setNotes((prev) => prev.map((n) => (n.id === noteId ? { ...n, tagIds: saved.tagIds } : n)));
+  };
+
+  /** 新しいタグを作る。同じ名前のタグがあれば、それを使う */
+  const handleCreateTag = async (name: string): Promise<Tag> => {
+    if (!currentProject) throw new Error('プロジェクトがありません。');
+    let tag: Tag;
+    try {
+      tag = await workspaceRepository.createTag(currentProject.id, name);
+    } catch (e) {
+      if (!(e instanceof TagExistsError)) throw e;
+      tag = e.existing;
+    }
+    setTags((prev) => sortTags([...prev.filter((t) => t.id !== tag.id), tag]));
+    return tag;
+  };
+
+  const handleUpdateTag = async (tagId: string, updates: { name?: string; color?: TagColor | null }) => {
+    const updated = await workspaceRepository.updateTag(tagId, updates);
+    setTags((prev) => sortTags(prev.map((t) => (t.id === tagId ? updated : t))));
+  };
+
+  /** タグを削除し、メモからも外す */
+  const handleDeleteTag = async (tagId: string) => {
+    await workspaceRepository.deleteTag(tagId);
+    setTags((prev) => prev.filter((t) => t.id !== tagId));
+    setNotes((prev) =>
+      prev.map((n) => (n.tagIds.includes(tagId) ? { ...n, tagIds: n.tagIds.filter((id) => id !== tagId) } : n))
+    );
   };
 
   // --- Projects ---
@@ -713,6 +755,7 @@ export default function App() {
       <div className="flex-1 flex min-h-0 overflow-hidden">
         <Sidebar
           notes={notes}
+          tags={tags}
           prds={prds}
           panes={panes.slice(0, paneCount)}
           activePaneId={activePaneId}
@@ -724,12 +767,14 @@ export default function App() {
           onDeleteNote={handleDeleteNote}
           onDuplicateNote={handleDuplicateNote}
           onOpenPrd={setActivePrdId}
+          onOpenTagManager={() => setIsTagManagerOpen(true)}
         />
 
         <Workspace
           paneCount={paneCount}
           panes={panes}
           notes={notes}
+          tags={tags}
           noteRevisions={noteRevisions}
           activePaneId={activePaneId}
           onActivatePane={handleActivatePane}
@@ -737,6 +782,8 @@ export default function App() {
           onCreateNoteInPane={handleCreateNoteInPane}
           onUpdateNote={handleUpdateNote}
           onDeleteNote={handleDeleteNote}
+          onSetNoteTags={handleSetNoteTags}
+          onCreateTag={handleCreateTag}
         />
       </div>
 
@@ -765,6 +812,16 @@ export default function App() {
           onOpenNoteInPane={handleOpenNoteInActivePane}
           onAnswerQuestion={handleAnswerQuestion}
           onRegenerateWithAnswers={handleRegenerateWithAnswers}
+        />
+      )}
+
+      {isTagManagerOpen && (
+        <TagManagerDialog
+          tags={tags}
+          notes={notes}
+          onUpdate={handleUpdateTag}
+          onDelete={handleDeleteTag}
+          onClose={() => setIsTagManagerOpen(false)}
         />
       )}
 

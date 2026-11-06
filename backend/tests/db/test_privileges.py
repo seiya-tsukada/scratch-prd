@@ -48,6 +48,8 @@ def test_all_expected_tables_exist(admin: psycopg.Connection) -> None:
         "oauth_states",
         "projects",
         "notes",
+        "tags",
+        "note_tags",
         "prd_documents",
         "prd_versions",
         "workspace_preferences",

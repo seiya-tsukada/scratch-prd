@@ -128,9 +128,19 @@ def test_moving_a_project_to_another_user_moves_everything_under_it(app: psycopg
     guest = create_user(app)
     owner = create_user(app, is_guest=False, email="owner@example.com")
     project = create_project(app, guest)
-    app.execute(
-        "insert into idea_ws.notes (user_id, project_id, content) values (%s, %s, 'x')",
+    note = app.execute(
+        "insert into idea_ws.notes (user_id, project_id, content) values (%s, %s, 'x') returning id",
         (guest, project),
+    ).fetchone()
+    assert note is not None
+    tag = app.execute(
+        "insert into idea_ws.tags (user_id, project_id, name) values (%s, %s, 'T') returning id",
+        (guest, project),
+    ).fetchone()
+    assert tag is not None
+    app.execute(
+        "insert into idea_ws.note_tags (note_id, tag_id, user_id, project_id) values (%s, %s, %s, %s)",
+        (note[0], tag[0], guest, project),
     )
     prd = app.execute(
         "insert into idea_ws.prd_documents (user_id, project_id, title, generation_mode) "
@@ -151,10 +161,64 @@ def test_moving_a_project_to_another_user_moves_everything_under_it(app: psycopg
 
     app.execute("update idea_ws.projects set user_id = %s where user_id = %s", (owner, guest))
 
-    for table in ["projects", "notes", "prd_documents", "prd_versions", "workspace_preferences"]:
+    tables = ["projects", "notes", "tags", "note_tags", "prd_documents", "prd_versions", "workspace_preferences"]
+    for table in tables:
         moved = app.execute(f"select count(*) from idea_ws.{table} where user_id = %s", (owner,)).fetchone()
         left = app.execute(f"select count(*) from idea_ws.{table} where user_id = %s", (guest,)).fetchone()
         assert (moved, left) == ((1,), (0,)), table
+
+
+def test_tag_names_are_unique_per_project_ignoring_case(app: psycopg.Connection) -> None:
+    user = create_user(app)
+    project = create_project(app, user)
+    other_project = create_project(app, user)
+    app.execute("insert into idea_ws.tags (user_id, project_id, name) values (%s, %s, 'MVP')", (user, project))
+    app.execute("insert into idea_ws.tags (user_id, project_id, name) values (%s, %s, 'mvp')", (user, other_project))
+    with pytest.raises(errors.UniqueViolation), app.transaction():
+        app.execute("insert into idea_ws.tags (user_id, project_id, name) values (%s, %s, 'mvp')", (user, project))
+
+
+def test_note_and_tag_must_be_in_same_project(app: psycopg.Connection) -> None:
+    user = create_user(app)
+    project = create_project(app, user)
+    other_project = create_project(app, user)
+    note = app.execute(
+        "insert into idea_ws.notes (user_id, project_id) values (%s, %s) returning id", (user, project)
+    ).fetchone()
+    tag = app.execute(
+        "insert into idea_ws.tags (user_id, project_id, name) values (%s, %s, 'T') returning id",
+        (user, other_project),
+    ).fetchone()
+    assert note is not None and tag is not None
+    with pytest.raises(errors.ForeignKeyViolation), app.transaction():
+        app.execute(
+            "insert into idea_ws.note_tags (note_id, tag_id, user_id, project_id) values (%s, %s, %s, %s)",
+            (note[0], tag[0], user, project),
+        )
+
+
+def test_deleting_a_tag_or_note_removes_its_links(app: psycopg.Connection) -> None:
+    user = create_user(app)
+    project = create_project(app, user)
+    note = app.execute(
+        "insert into idea_ws.notes (user_id, project_id) values (%s, %s) returning id", (user, project)
+    ).fetchone()
+    tags = app.execute(
+        "insert into idea_ws.tags (user_id, project_id, name) values (%s, %s, 'A'), (%s, %s, 'B') returning id",
+        (user, project, user, project),
+    ).fetchall()
+    assert note is not None
+    for (tag_id,) in tags:
+        app.execute(
+            "insert into idea_ws.note_tags (note_id, tag_id, user_id, project_id) values (%s, %s, %s, %s)",
+            (note[0], tag_id, user, project),
+        )
+
+    app.execute("delete from idea_ws.tags where id = %s", (tags[0][0],))
+    assert app.execute("select count(*) from idea_ws.note_tags").fetchone() == (1,)
+    app.execute("delete from idea_ws.notes where id = %s", (note[0],))
+    assert app.execute("select count(*) from idea_ws.note_tags").fetchone() == (0,)
+    assert app.execute("select count(*) from idea_ws.tags where user_id = %s", (user,)).fetchone() == (1,)
 
 
 def test_updated_at_is_set_on_update(admin: psycopg.Connection) -> None:

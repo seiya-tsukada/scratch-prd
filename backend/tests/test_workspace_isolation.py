@@ -17,13 +17,13 @@ def snapshot(client: TestClient) -> dict[str, Any]:
 
 @pytest.fixture
 def alice(guest_client: TestClient) -> dict[str, Any]:
-    """被害者側（guest_client）のリソース ID"""
+    """被害者側（guest_client）のリソース ID。タグはサンプルに無いので作る"""
     data = snapshot(guest_client)
-    return {
-        "project": data["currentProjectId"],
-        "note": data["data"]["notes"][0]["id"],
-        "prd": data["data"]["prds"][0]["id"],
-    }
+    project = data["currentProjectId"]
+    note = data["data"]["notes"][0]["id"]
+    tag = guest_client.post(f"/api/projects/{project}/tags", json={"name": "secret"}).json()["id"]
+    assert guest_client.put(f"/api/notes/{note}/tags", json={"tagIds": [tag]}).status_code == 200
+    return {"project": project, "note": note, "prd": data["data"]["prds"][0]["id"], "tag": tag}
 
 
 @pytest.fixture
@@ -40,6 +40,12 @@ ATTACKS: list[tuple[str, str, Any]] = [
     ("post", "/api/projects/{alice[project]}/notes", {"content": "pwned"}),
     ("patch", "/api/notes/{alice[note]}", {"content": "pwned"}),
     ("delete", "/api/notes/{alice[note]}", None),
+    ("put", "/api/notes/{alice[note]}/tags", {"tagIds": []}),
+    # 自分のメモに他人のタグを付ける
+    ("put", "/api/notes/{bob[note]}/tags", {"tagIds": ["{alice[tag]}"]}),
+    ("post", "/api/projects/{alice[project]}/tags", {"name": "pwned"}),
+    ("patch", "/api/tags/{alice[tag]}", {"name": "pwned"}),
+    ("delete", "/api/tags/{alice[tag]}", None),
     ("get", "/api/projects/{alice[project]}/prds", None),
     ("get", "/api/prds/{alice[prd]}", None),
     ("post", "/api/projects/{alice[project]}/prds", PRD_BODY),
@@ -58,6 +64,8 @@ def fill(value: Any, ids: dict[str, Any]) -> Any:
         return value.format(**ids)
     if isinstance(value, dict):
         return {k: fill(v, ids) for k, v in value.items()}
+    if isinstance(value, list):
+        return [fill(v, ids) for v in value]
     return value
 
 

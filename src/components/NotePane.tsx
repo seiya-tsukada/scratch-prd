@@ -15,7 +15,8 @@ import {
   Quote,
   Code,
 } from 'lucide-react';
-import { Note } from '../types';
+import { Note, Tag } from '../types';
+import { TagEditor } from './TagEditor';
 import { getFirstLineText, getNoteShortLabel } from '../utils/note';
 import { useCopyFeedback } from '../hooks/useCopyFeedback';
 import { DATE_LOCALE, TIMING, UNTITLED_NOTE_LABEL } from '../config/app';
@@ -49,12 +50,16 @@ interface NotePaneProps {
   paneIndex: number;
   note: Note | null;
   allNotes: Note[];
+  /** プロジェクトのすべてのタグ */
+  tags: Tag[];
   isActive: boolean;
   onActivate: () => void;
   onSelectNote: (noteId: string) => void;
   onCreateNoteInPane: () => void;
   onUpdateNote: (noteId: string, updates: Partial<Note>) => void;
   onDeleteNote: (noteId: string) => void;
+  onSetNoteTags: (noteId: string, tagIds: string[]) => Promise<void>;
+  onCreateTag: (name: string) => Promise<Tag>;
   /** 変わると入力中の内容をサーバーの値で読み直す（競合時など） */
   syncKey?: number;
 }
@@ -63,12 +68,15 @@ export const NotePane: React.FC<NotePaneProps> = ({
   paneIndex,
   note,
   allNotes,
+  tags,
   isActive,
   onActivate,
   onSelectNote,
   onCreateNoteInPane,
   onUpdateNote,
   onDeleteNote,
+  onSetNoteTags,
+  onCreateTag,
   syncKey = 0,
 }) => {
   const { copied, copy } = useCopyFeedback();
@@ -364,6 +372,14 @@ export const NotePane: React.FC<NotePaneProps> = ({
           className="w-full text-base font-bold bg-transparent border-none outline-none text-zinc-900 dark:text-zinc-100 placeholder-zinc-400/80 tracking-tight"
         />
       </div>
+
+      {/* タグ */}
+      <TagEditor
+        tags={tags}
+        selectedIds={note.tagIds ?? []}
+        onChange={(tagIds) => onSetNoteTags(note.id, tagIds)}
+        onCreate={onCreateTag}
+      />
 
       {/* Formatting Toolbar */}
       <div className="px-3 py-1 border-b border-zinc-100 dark:border-zinc-800/60 bg-zinc-50/40 dark:bg-zinc-900/40 flex items-center gap-1 text-zinc-500 overflow-x-auto">

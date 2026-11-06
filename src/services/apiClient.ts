@@ -32,6 +32,7 @@ const CODE_MESSAGES: Record<string, string> = {
   rate_limited: '短時間にリクエストが集中しています。しばらく待ってからお試しください。',
   limit_exceeded: '保存できる件数の上限に達しました。不要なデータを削除してからお試しください。',
   conflict: '他の画面で先に更新されていました。',
+  tag_exists: '同じ名前のタグがすでにあります。',
   email_taken: 'このメールアドレスは既に登録されています。ログインしてください。',
   already_registered: 'すでにアカウント登録済みです。',
   invalid_credentials: 'メールアドレスまたはパスワードが正しくありません。',

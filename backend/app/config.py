@@ -153,6 +153,12 @@ MAX_LEGACY_SECTIONS = 50
 # 名前がこれに一致するセクションのメモは PRD として扱う（旧データの変換。マイグレーションと同じ規則）
 LEGACY_PRD_SECTION_PATTERN = r"^\s*PRD"
 MAX_PRDS_PER_PROJECT = 200
+# メモのタグ（src/config/tags.ts と同じ値。backend/tests/test_limits_sync.py で検証）
+MAX_TAGS_PER_PROJECT = 200
+MAX_TAGS_PER_NOTE = 20
+MAX_TAG_NAME_CHARS = 50
+# タグの色はパレットのキーで保存する（Tailwind のクラスは画面側の src/config/tags.ts で対応付ける）
+TAG_COLORS = ("gray", "red", "amber", "green", "teal", "blue", "indigo", "purple", "pink")
 MAX_PRD_VERSIONS_PER_PRD = 200
 MAX_NAME_CHARS = 200
 MAX_DESCRIPTION_CHARS = 2_000

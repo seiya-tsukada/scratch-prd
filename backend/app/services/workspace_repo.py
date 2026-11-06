@@ -1,4 +1,4 @@
-"""ユーザー配下データ（projects / notes / prds / preferences）の DB 操作。
+"""ユーザー配下データ（projects / notes / tags / prds / preferences）の DB 操作。
 
 すべての関数は user_id を必須で受け取り、すべてのクエリに user_id 条件を付ける。
 他人の ID・存在しない ID は NotFoundError（ルーターで 404）にして、存在を漏らさない。
@@ -10,6 +10,7 @@ from collections import defaultdict
 from typing import Any
 from uuid import UUID
 
+from psycopg import errors as pg_errors
 from psycopg import sql
 from psycopg.types.json import Jsonb
 
@@ -19,6 +20,7 @@ from backend.app.models.workspace import (
     Bootstrap,
     Note,
     NoteCreate,
+    NoteTagsSave,
     NoteUpdate,
     PaneInfo,
     PrdDocument,
@@ -28,6 +30,9 @@ from backend.app.models.workspace import (
     Project,
     ProjectData,
     ProjectUpdate,
+    Tag,
+    TagCreate,
+    TagUpdate,
     WorkspacePreferences,
 )
 
@@ -42,6 +47,14 @@ class ConflictError(Exception):
     def __init__(self, current: Note) -> None:
         super().__init__("note was updated by someone else")
         self.current = current
+
+
+class TagExistsError(Exception):
+    """同じプロジェクトに同じ名前（大文字小文字を区別しない）のタグがある"""
+
+    def __init__(self, existing: Tag) -> None:
+        super().__init__("tag already exists")
+        self.existing = existing
 
 
 class LimitExceededError(Exception):
@@ -151,17 +164,30 @@ async def delete_project(conn: Conn, user_id: UUID, project_id: UUID) -> None:
 # ---------------------------------------------------------------- notes
 
 
+# メモに付いているタグ ID（付けた順）。notes の別名を n として使う
+_NOTE_TAG_IDS = """
+  array(
+    select nt.tag_id from idea_ws.note_tags nt
+    where nt.note_id = n.id and nt.user_id = n.user_id
+    order by nt.created_at, nt.tag_id
+  ) as tag_ids
+"""
+
+
 async def list_notes(conn: Conn, user_id: UUID, project_id: UUID) -> list[Note]:
     rows = await _fetch_all(
         conn,
-        "select * from idea_ws.notes where user_id = %s and project_id = %s order by updated_at desc, id",
+        f"select n.*, {_NOTE_TAG_IDS} from idea_ws.notes n "
+        "where n.user_id = %s and n.project_id = %s order by n.updated_at desc, n.id",
         (user_id, project_id),
     )
     return [Note.model_validate(r) for r in rows]
 
 
 async def get_note(conn: Conn, user_id: UUID, note_id: UUID) -> Note:
-    row = await _fetch_one(conn, "select * from idea_ws.notes where id = %s and user_id = %s", (note_id, user_id))
+    row = await _fetch_one(
+        conn, f"select n.*, {_NOTE_TAG_IDS} from idea_ws.notes n where n.id = %s and n.user_id = %s", (note_id, user_id)
+    )
     if row is None:
         raise NotFoundError
     return Note.model_validate(row)
@@ -202,11 +228,116 @@ async def update_note(conn: Conn, user_id: UUID, note_id: UUID, body: NoteUpdate
     if row is None:
         # 存在しない（404）か、他で先に更新された（409）
         raise ConflictError(await get_note(conn, user_id, note_id))
-    return Note.model_validate(row)
+    return await get_note(conn, user_id, note_id)
 
 
 async def delete_note(conn: Conn, user_id: UUID, note_id: UUID) -> None:
     await _delete_owned(conn, "notes", user_id, note_id)
+
+
+async def set_note_tags(conn: Conn, user_id: UUID, note_id: UUID, body: NoteTagsSave) -> Note:
+    """メモのタグを tag_ids で置き換える。タグはメモと同じプロジェクトの自分のものに限る。
+    メモの updated_at は変えない（本文の自動保存の競合判定に影響させないため）"""
+    note = await get_note(conn, user_id, note_id)
+    tag_ids = list(dict.fromkeys(body.tag_ids))
+    if tag_ids:
+        owned = await _fetch_all(
+            conn,
+            "select id from idea_ws.tags where user_id = %s and project_id = %s and id = any(%s)",
+            (user_id, note.project_id, tag_ids),
+        )
+        if len(owned) != len(tag_ids):
+            raise NotFoundError
+    async with conn.transaction():
+        await conn.execute(
+            "delete from idea_ws.note_tags where user_id = %s and note_id = %s and not (tag_id = any(%s))",
+            (user_id, note_id, tag_ids),
+        )
+        # 付けた順を保つため、1 件ずつ時刻をずらして入れる
+        await conn.execute(
+            """
+            insert into idea_ws.note_tags (note_id, tag_id, user_id, project_id, created_at)
+            select %s, t.id, %s, %s, now() + make_interval(secs => t.ord * 0.000001)
+            from unnest(%s::uuid[]) with ordinality as t(id, ord)
+            on conflict (note_id, tag_id) do nothing
+            """,
+            (note_id, user_id, note.project_id, tag_ids),
+        )
+    return await get_note(conn, user_id, note_id)
+
+
+# ---------------------------------------------------------------- tags
+
+
+async def list_tags(conn: Conn, user_id: UUID, project_id: UUID) -> list[Tag]:
+    rows = await _fetch_all(
+        conn,
+        "select * from idea_ws.tags where user_id = %s and project_id = %s order by lower(name), id",
+        (user_id, project_id),
+    )
+    return [Tag.model_validate(r) for r in rows]
+
+
+async def _get_tag(conn: Conn, user_id: UUID, tag_id: UUID) -> Tag:
+    row = await _fetch_one(conn, "select * from idea_ws.tags where id = %s and user_id = %s", (tag_id, user_id))
+    if row is None:
+        raise NotFoundError
+    return Tag.model_validate(row)
+
+
+async def _tag_by_name(conn: Conn, user_id: UUID, project_id: UUID, name: str) -> Tag:
+    row = await _fetch_one(
+        conn,
+        "select * from idea_ws.tags where user_id = %s and project_id = %s and lower(name) = lower(%s)",
+        (user_id, project_id, name),
+    )
+    if row is None:
+        raise NotFoundError
+    return Tag.model_validate(row)
+
+
+async def create_tag(conn: Conn, user_id: UUID, project_id: UUID, body: TagCreate) -> Tag:
+    """同じ名前（大文字小文字を区別しない）のタグがあれば TagExistsError（既存のタグを返す）"""
+    await get_project(conn, user_id, project_id)
+    await _ensure_below_limit(
+        conn,
+        "tags",
+        config.MAX_TAGS_PER_PROJECT,
+        "select count(*) from idea_ws.tags where user_id = %s and project_id = %s",
+        (user_id, project_id),
+    )
+    try:
+        async with conn.transaction():
+            row = await _fetch_one(
+                conn,
+                "insert into idea_ws.tags (user_id, project_id, name, color) values (%s, %s, %s, %s) returning *",
+                (user_id, project_id, body.name, body.color),
+            )
+    except pg_errors.UniqueViolation:
+        raise TagExistsError(await _tag_by_name(conn, user_id, project_id, body.name)) from None
+    assert row is not None
+    return Tag.model_validate(row)
+
+
+async def update_tag(conn: Conn, user_id: UUID, tag_id: UUID, body: TagUpdate) -> Tag:
+    """送られた項目だけ更新する（color: null は色を外す）。名前が他のタグと重なれば TagExistsError"""
+    updates = body.model_dump(include=body.model_fields_set)
+    if updates.get("name") is None:
+        updates.pop("name", None)
+    tag = await _get_tag(conn, user_id, tag_id)
+    try:
+        async with conn.transaction():
+            row = await _update_owned(conn, "tags", user_id, tag_id, updates)
+    except pg_errors.UniqueViolation:
+        raise TagExistsError(await _tag_by_name(conn, user_id, tag.project_id, updates["name"])) from None
+    if row is None:
+        raise NotFoundError
+    return Tag.model_validate(row)
+
+
+async def delete_tag(conn: Conn, user_id: UUID, tag_id: UUID) -> None:
+    """メモとの紐付け（note_tags）は外部キーの cascade で消える"""
+    await _delete_owned(conn, "tags", user_id, tag_id)
 
 
 # ---------------------------------------------------------------- PRD
@@ -399,6 +530,7 @@ async def get_project_data(conn: Conn, user_id: UUID, project_id: UUID) -> Proje
     await get_project(conn, user_id, project_id)
     return ProjectData(
         notes=await list_notes(conn, user_id, project_id),
+        tags=await list_tags(conn, user_id, project_id),
         prds=await list_prds(conn, user_id, project_id),
         preferences=await get_preferences(conn, user_id, project_id),
     )

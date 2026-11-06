@@ -1,4 +1,4 @@
-"""Workspace API: projects / notes / prds / preferences と旧 localStorage データの取り込み。
+"""Workspace API: projects / notes / tags / prds / preferences と旧 localStorage データの取り込み。
 ログイン（ゲスト可）必須。他人のリソースは 404（main.py の例外ハンドラ）"""
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from backend.app.models.workspace import (
     LegacyProjectImport,
     Note,
     NoteCreate,
+    NoteTagsSave,
     NoteUpdate,
     PrdDocument,
     PrdSave,
@@ -23,6 +24,9 @@ from backend.app.models.workspace import (
     ProjectCreate,
     ProjectData,
     ProjectUpdate,
+    Tag,
+    TagCreate,
+    TagUpdate,
     WorkspacePreferences,
 )
 from backend.app.services import legacy_import
@@ -88,6 +92,32 @@ async def update_note(note_id: UUID, body: NoteUpdate, user: CurrentUser, db: Db
 @router.delete("/notes/{note_id}", status_code=204)
 async def delete_note(note_id: UUID, user: CurrentUser, db: Db) -> None:
     await repo.delete_note(db, user.user_id, note_id)
+
+
+@router.put("/notes/{note_id}/tags")
+async def set_note_tags(note_id: UUID, body: NoteTagsSave, user: CurrentUser, db: Db) -> Note:
+    """メモのタグを tagIds で置き換える（他人・別プロジェクトのタグは 404）"""
+    return await repo.set_note_tags(db, user.user_id, note_id, body)
+
+
+# ---------------------------------------------------------------- tags
+
+
+@router.post("/projects/{project_id}/tags", status_code=201, response_model_exclude_none=True)
+async def create_tag(project_id: UUID, body: TagCreate, user: CurrentUser, db: Db) -> Tag:
+    """同じ名前のタグがあれば 409（tag_exists、既存のタグを返す）"""
+    return await repo.create_tag(db, user.user_id, project_id, body)
+
+
+@router.patch("/tags/{tag_id}", response_model_exclude_none=True)
+async def update_tag(tag_id: UUID, body: TagUpdate, user: CurrentUser, db: Db) -> Tag:
+    return await repo.update_tag(db, user.user_id, tag_id, body)
+
+
+@router.delete("/tags/{tag_id}", status_code=204)
+async def delete_tag(tag_id: UUID, user: CurrentUser, db: Db) -> None:
+    """タグを削除し、メモからの紐付けも消す"""
+    await repo.delete_tag(db, user.user_id, tag_id)
 
 
 # ---------------------------------------------------------------- PRD

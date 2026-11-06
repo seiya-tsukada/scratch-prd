@@ -26,6 +26,22 @@ export interface Note {
   title: string;
   content: string;
   position: number;
+  /** 付いているタグ（付けた順） */
+  tagIds: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** タグの色（src/config/tags.ts の TAG_COLORS） */
+export type TagColor = 'gray' | 'red' | 'amber' | 'green' | 'teal' | 'blue' | 'indigo' | 'purple' | 'pink';
+
+/** メモのタグ（プロジェクト単位。名前は大文字小文字を区別せずユニーク） */
+export interface Tag {
+  id: string;
+  projectId: string;
+  userId: string;
+  name: string;
+  color?: TagColor;
   createdAt: string;
   updatedAt: string;
 }

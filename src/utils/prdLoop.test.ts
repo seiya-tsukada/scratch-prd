@@ -18,6 +18,7 @@ const note = (title: string, content: string): Note => ({
   userId: 'u',
   title,
   content,
+  tagIds: [],
   position: 0,
   createdAt: '',
   updatedAt: '',
