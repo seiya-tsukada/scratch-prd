@@ -38,9 +38,9 @@ class Settings(BaseSettings):
 
     # バックエンドの DB 接続（本番は Supabase の Connect 画面の transaction pooler の文字列をそのまま使う。
     # ユーザーは postgres.<project-ref>。ローカルは idea_ws_app）。
-    # 未設定ならローカルでは LOCAL_DATABASE_URL、Vercel 上ではモック（use_mock）になる
+    # 未設定ならローカルの LOCAL_DATABASE_URL（本番では未設定だと起動しない）
     database_url: str | None = None
-    # セッショントークン・IP をハッシュ化する HMAC の鍵。DB を使うときは必須（モックでは使わない）
+    # セッショントークン・IP をハッシュ化する HMAC の鍵。必須
     session_token_pepper: SecretStr | None = None
     # 状態を変えるリクエストで許可する Origin（カンマ区切り）
     allowed_origins: str = "http://localhost:3000"
@@ -58,16 +58,6 @@ class Settings(BaseSettings):
     vercel_project_production_url: str | None = None
     # Vercel が自動で設定する（production / preview / development）。ローカルでは未設定
     vercel_env: str | None = None
-    # DB に接続せず固定のサンプルを返す（backend/app/mock）。Supabase を用意するまでの一時的な設定。
-    # 未設定なら自動: Vercel 上（VERCEL_ENV あり）で DATABASE_URL が無ければモック。false で自動切り替えを止める
-    mock_backend: bool | None = None
-
-    @property
-    def use_mock(self) -> bool:
-        """環境変数を何も設定せずに Vercel へデプロイしても動くよう、DB の設定が無ければモックで応答する"""
-        if self.mock_backend is not None:
-            return self.mock_backend
-        return self.vercel_env is not None and not self.database_url
 
     @property
     def effective_database_url(self) -> str:
@@ -80,19 +70,20 @@ class Settings(BaseSettings):
         return self.session_token_pepper.get_secret_value()
 
     @model_validator(mode="after")
-    def require_pepper_unless_mock(self) -> Self:
-        if not self.use_mock and not self.session_token_pepper:
+    def require_pepper(self) -> Self:
+        if not self.session_token_pepper:
             raise ValueError("SESSION_TOKEN_PEPPER を設定してください")
         return self
 
     @model_validator(mode="after")
     def reject_local_settings_in_production(self) -> Self:
-        """本番でローカル用の値のまま起動しない（設定漏れを起動時に検出する）。
-        モックは DB・Turnstile・Cron を使わないため検査しない"""
-        if self.vercel_env != "production" or self.use_mock:
+        """本番でローカル用の値のまま起動しない（設定漏れを起動時に検出する）"""
+        if self.vercel_env != "production":
             return self
         problems: list[str] = []
-        if urlparse(self.effective_database_url).hostname in LOCAL_DB_HOSTS:
+        if not self.database_url:
+            problems.append("DATABASE_URL が未設定です")
+        elif urlparse(self.database_url).hostname in LOCAL_DB_HOSTS:
             problems.append("DATABASE_URL がローカルの DB を指しています")
         if len(self.pepper) < MIN_PRODUCTION_SECRET_CHARS:
             problems.append(f"SESSION_TOKEN_PEPPER は {MIN_PRODUCTION_SECRET_CHARS} 文字以上にしてください")

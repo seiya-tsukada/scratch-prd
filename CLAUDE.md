@@ -154,7 +154,7 @@ uv run ruff check backend api && uv run ruff format --check backend api && uv ru
 - マイグレーションは `supabase/migrations/`、コンテンツの初期データは `supabase/seed.sql`。本番への適用手順は [docs/supabase-setup.md](docs/supabase-setup.md)。
 - マイグレーションは**冪等**に書く（`if not exists` / `create or replace` / `pg_constraint` などを見る `do` ブロック）。ファイル名に日付を入れず、名前順で後ろに来る名前にする。`backend/tests/db/test_migrations.py` が 2 回適用でスキーマとデータが変わらないことを検証する。
 - 手動の運用作業は `supabase/maintenance/*.sql`（psql で実行）。データを消すものは `-v confirm=yes` が無ければ何もせず止める。
-- `GET /api/health` は DB に `select 1` を投げて接続を確認する（失敗時 503。モックでは `db: skipped`）。
+- `GET /api/health` は DB に `select 1` を投げて接続を確認する（失敗時 503）。
 - ローカルの `idea_ws_app` のパスワードは `idea_ws_app`（`db_reset` が設定する）。本番の `DATABASE_URL` は Supabase の Connect 画面の Transaction pooler の文字列（`postgres.<project-ref>`）をそのまま使い、`idea_ws_app` はログイン不可のまま。
 - テーブルを追加するときは、同じマイグレーションで RLS 有効化・`idea_ws_app` への GRANT・`idea_ws_app` 用ポリシーを行う。
 
@@ -183,9 +183,8 @@ Workspace API（Phase 4a〜）:
 
 - イベントは `backend/app/services/events.py` のホワイトリスト（`EVENT_SCHEMAS`）に追加してから使う。API で起きる出来事はサーバー側で `record_event`、画面上の操作だけ `src/services/analytics.ts` の `track`（`CLIENT_EVENTS`）。properties に個人情報・メモ本文を入れない。
 - 本番の画面（`dist/`）は Vercel の CDN が配信する。セキュリティヘッダー（CSP など）は API が `main.py`、画面が `vercel.json` の `headers`。外部のスクリプト・画像を足すときは両方の CSP を直す（`test_deploy.py` が一致を検証）。
-- モック（`backend/app/mock/`。DB に接続せず固定のサンプルを返す）は Supabase を用意するまでの一時的な仕組み。`MOCK_BACKEND=true`、または Vercel 上で `DATABASE_URL` が未設定のとき自動で有効になる（`config.Settings.use_mock`。`check:bundle` も同じ規則）。
 - 環境変数を足したら `docs/deploy.md` の表と `.env.example` を更新する。
-- `VERCEL_ENV=production` では `config.Settings` がローカル用の値（localhost の DB・テスト用 Turnstile キー・短い pepper・`COOKIE_SECURE=false` など）を拒否して起動しない。`check:bundle` も本番ビルドにテスト用サイトキーがあれば失敗する。
+- `VERCEL_ENV=production` では `config.Settings` がローカル用の値（localhost の DB・テスト用 Turnstile キー・短い pepper・`COOKIE_SECURE=false` など）を拒否して起動しない。`check:bundle` も本番ビルドにテスト用サイトキーがあれば失敗する。`DATABASE_URL` が未設定でも起動しない（モックは廃止した）。
 - セクションは廃止した。メモと PRD は別のエンティティで、サイドバーの「メモ」「PRD」タブにそれぞれ更新日時の降順で並ぶ。PRD は `source_note_ids` で生成元メモを参照する（メモを消しても PRD は残り、画面では「削除済み」と出す）。再生成は元の PRD を変えず、常に新しい PRD を作る。`generation_mode = 'unknown'` は旧データ（PRD セクションのメモ）から変換した PRD。
 - メモのタグはプロジェクト単位（`scratch_prd.tags` / `note_tags`）。名前は大文字小文字を区別せずユニーク（重複は 409 `tag_exists`）、色はパレットのキー（`src/config/tags.ts` と `config.TAG_COLORS`）。メモのタグは `PUT /api/notes/{id}/tags` で一覧ごと置き換え、メモの `updated_at` は変えない。PRD にはタグを付けない。
 - PRD 生成の入口は `PrdGeneratorModal` だけ（入力元は「メモから」と「テキストを貼り付け」。貼り付けた内容はメモにしてから使う）。初回の案内も同じダイアログを `isOnboarding` で開く。PRD 生成は `App.tsx` の `generatePrdFromNotes` に集約している。殴り書きの整形（`/api/structure-rough-note`）は廃止した（PRD 生成のプロンプトが整形を兼ねる）。
