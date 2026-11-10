@@ -6,7 +6,6 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -138,8 +137,3 @@ async def generate_prd(
         session_id=user.session_id,
     )
     return response
-
-
-@router.get("/health")
-async def health() -> dict[str, str]:
-    return {"status": "ok", "time": datetime.now(UTC).isoformat()}

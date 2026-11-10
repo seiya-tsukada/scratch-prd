@@ -4,7 +4,7 @@
 #
 #   db      … 開発用 Postgres（データはボリュームに保持）。Supabase と同じイメージ（anon / authenticated などのロールが存在する）
 #   db-test … pytest 用（毎回作り直すため tmpfs）
-#   migrate … idea_ws が無いときだけマイグレーションと seed を適用（作り直すときは README の db_reset）
+#   migrate … 起動のたびにマイグレーションと seed を適用（冪等。データは消さない。作り直すときは npm run docker:db-reset）
 #   api     … FastAPI（:8000、backend/ の変更で自動再起動）
 #   web     … Vite（:3000、/api を api へ転送）
 #
@@ -50,8 +50,7 @@ services:
       - --no-sync
       - python
       - -m
-      - backend.scripts.db_reset
-      - --if-empty
+      - backend.scripts.db_migrate
       - --database-url
       - postgresql://postgres:postgres@db:5432/postgres
     volumes:

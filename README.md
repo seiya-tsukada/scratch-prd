@@ -21,7 +21,8 @@ src/                     フロント（components / services / config / utils /
 api/index.py             Vercel Function の入口（backend の app を公開するだけ）
 backend/app/             FastAPI（routers / services / models / config / db / security / sessions）
 backend/tests/           pytest（db/ はスキーマ・権限のテスト）
-supabase/migrations/     マイグレーション（Supabase CLI 形式）、supabase/seed.sql はサンプルとテンプレート
+supabase/migrations/     マイグレーション（冪等。名前順に psql で流す）、supabase/seed.sql はサンプル
+supabase/maintenance/    メンテナンス用 SQL（手動で psql から実行する）
 scripts/                 ビルド成果物の秘密情報検査
 docs/                    supabase-setup.md（Supabase の手作業）、deploy.md（Vercel へのデプロイ）
 ```
@@ -37,9 +38,9 @@ cp .env.example .env                        # ローカル用の値入り。GEMI
 docker compose up --build                   # http://localhost:3000
 ```
 
-- `db`（Postgres）→ `migrate`（idea_ws が無ければマイグレーションと seed）→ `api`（FastAPI :8000）→ `web`（Vite :3000）の順に起動する。
+- `db`（Postgres）→ `migrate`（マイグレーションと seed を冪等に適用）→ `api`（FastAPI :8000）→ `web`（Vite :3000）の順に起動する。
 - `backend/` と `src/` の変更は自動で反映される。依存（`package.json` / `pyproject.toml`）を変えたら `docker compose up --build`。
-- 新しいマイグレーションを追加すると `migrate` が「古い」と止まる。`npm run docker:db-reset`（ローカルのデータは消える）で作り直す。
+- マイグレーションは冪等なので、`docker compose up` のたびに `migrate` が最新の状態にする（データは消さない）。空の状態からやり直したいときは `npm run docker:db-reset`（ローカルのデータは消える）。
 - ほかのアプリとポートがぶつかる場合は `.env` の `DB_PORT` / `DB_TEST_PORT` / `API_PORT` / `WEB_PORT` を変える。
 - 通知（メール送信など）はローカルでは再現しない。Turnstile は Cloudflare 公式のテストキー（常に成功）を使う。
 
@@ -50,7 +51,7 @@ npm install
 uv sync
 cp .env.example .env
 docker compose up -d db db-test             # Postgres（開発用 :54322 / テスト用 :54323）
-uv run python -m backend.scripts.db_reset   # 開発用 DB にマイグレーションとサンプルを適用
+uv run python -m backend.scripts.db_migrate # 開発用 DB にマイグレーションとサンプルを適用（データは消さない）
 npm run dev                                 # http://localhost:3000（FastAPI :8000 と Vite を同時起動）
 ```
 
@@ -70,7 +71,7 @@ api     FastAPI（python:3.12 + uv）… backend/ の変更で自動再起動
   ▼
 db      Postgres（supabase/postgres）… データはボリューム scratch-prd_db-data
   ▲
-migrate 起動時に 1 回だけ動く（idea_ws が無ければマイグレーション + seed）
+migrate 起動時に 1 回だけ動く（マイグレーション + seed を冪等に適用）
 
 db-test pytest 用の Postgres（tmpfs。止めると消える）
 ```
@@ -79,7 +80,7 @@ db-test pytest 用の Postgres（tmpfs。止めると消える）
 |---|---|---|---|
 | `db` | `supabase/postgres` | 54322（`DB_PORT`） | 開発用 DB。Supabase と同じイメージなので `anon` などのロールもある |
 | `db-test` | `supabase/postgres` | 54323（`DB_TEST_PORT`） | `uv run pytest` 用。毎回作り直す |
-| `migrate` | `docker/api.Dockerfile` | なし | `db_reset --if-empty`。終了してから `api` が起動する |
+| `migrate` | `docker/api.Dockerfile` | なし | `db_migrate`（冪等。データは消さない）。終了してから `api` が起動する |
 | `api` | `docker/api.Dockerfile` | 8000（`API_PORT`） | FastAPI。`backend/` をマウント |
 | `web` | `docker/web.Dockerfile` | 3000（`WEB_PORT`） | Vite。リポジトリ全体をマウント |
 
@@ -118,7 +119,7 @@ Git で管理しているのは DB の初期状態だけ:
 | `npm run docker:db-reset` | **消える**（スキーマと seed だけの状態に戻る） | — |
 | `docker compose down -v` | **消える**（ボリュームごと削除） | 消える |
 
-マイグレーションを追加したときは、`migrate` が「古い」と表示して止まる（データを勝手に消さないため）。`npm run docker:db-reset` で作り直す。
+マイグレーションを変えたときも、`docker compose up` で `migrate` が既存のデータを残したまま適用する（冪等なので何度流してもよい）。
 
 作り直す前にデータを残したい場合のバックアップと戻し方（同じマイグレーションの状態に戻す場合のみ）:
 
@@ -138,12 +139,40 @@ docker compose exec -T db psql -U postgres -q -v ON_ERROR_STOP=1 < backup.sql
 
 DB の中を見る場合: `docker compose exec db psql -U postgres`（例 `select * from idea_ws.funnel_daily;`）。
 
+### メンテナンス用 SQL（`supabase/maintenance/`）
+
+マイグレーションとは別のフォルダなので、`migrate` や本番のマイグレーション適用では流れない。必要なときに psql で手動実行する。
+データを消すもの（★）は `-v confirm=yes`（`delete_user.sql` は `-v email=...`）が無ければ何もせずにエラーで止まる。
+
+| ファイル | 内容 | 例 |
+|---|---|---|
+| `row_counts.sql` | 全テーブルの行数（読み取りのみ） | `psql "$DATABASE_URL_DIRECT" -f supabase/maintenance/row_counts.sql` |
+| `purge_expired.sql` | 期限切れのセッション・トークン・古いレート制限を削除（Cron と同じ） | `psql "$DATABASE_URL_DIRECT" -f supabase/maintenance/purge_expired.sql` |
+| `cleanup_inactive_guests.sql` | アクセスの無いゲストを削除（既定 30 日。Cron と同じ） | `psql "$DATABASE_URL_DIRECT" -v days=30 -f supabase/maintenance/cleanup_inactive_guests.sql` |
+| ★ `delete_user.sql` | メールアドレスで 1 人削除（配下のデータも消える） | `psql "$DATABASE_URL_DIRECT" -v email=user@example.com -f supabase/maintenance/delete_user.sql` |
+| ★ `truncate_users.sql` | 全ユーザーとそのデータ・計測を消す（サンプルは残る） | `psql "$DATABASE_URL_DIRECT" -v confirm=yes -f supabase/maintenance/truncate_users.sql` |
+| ★ `truncate_data.sql` | サンプル以外の全テーブルを空にする | `psql "$DATABASE_URL_DIRECT" -v confirm=yes -f supabase/maintenance/truncate_data.sql` |
+| ★ `drop_schema.sql` | `idea_ws` スキーマを丸ごと削除 | `psql "$DATABASE_URL_DIRECT" -v confirm=yes -f supabase/maintenance/drop_schema.sql` |
+
+ローカル（docker compose の `db`）では、ホストに psql が無くてもコンテナの psql に標準入力で渡せる:
+
+```bash
+docker compose exec -T db psql -U postgres -v confirm=yes < supabase/maintenance/truncate_data.sql
+```
+
+本番の DB を作り直す（削除 → マイグレーション → seed を 1 トランザクションで）:
+
+```bash
+cat supabase/maintenance/drop_schema.sql supabase/migrations/*.sql supabase/seed.sql | psql "$DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -v confirm=yes -1
+```
+
 ## コマンド
 
 | コマンド | 内容 |
 |---|---|
 | `docker compose up --build` | DB・API・画面をまとめて起動 |
 | `npm run docker:db-reset` | docker compose の開発用 DB を作り直す（データは消える） |
+| `uv run python -m backend.scripts.db_migrate` | ホストから開発用 DB にマイグレーションを適用（冪等。データは消さない） |
 | `npm run dev` | FastAPI と Vite をホストで同時起動（`/api` は Vite が :8000 へ転送） |
 | `npm run lint` / `npm test` | 型チェック / vitest |
 | `npm run build` / `npm run check:bundle` | フロントのビルド / ビルド成果物に秘密情報が無いことの検査 |
@@ -164,7 +193,7 @@ GitHub Actions（[.github/workflows/ci.yml](.github/workflows/ci.yml)）が PR �
 
 1. `main` から作業ブランチを作る（1 Phase = 1 ブランチ = 1 PR）。
 2. `docker compose up --build` で起動し、http://localhost:3000 で変更を確認する。
-3. マイグレーションを追加した場合は `npm run docker:db-reset` で作り直し、サンプルから始まる状態でも動くことを確認する。
+3. マイグレーションを変えた場合は、既存のデータがある DB に `docker compose up` で適用できること（冪等。`backend/tests/db/test_migrations.py` が 2 回適用を検証する）と、`npm run docker:db-reset` で空から作った状態でも動くことを確認する。
 4. 次のチェックを通す（CI と同じ内容）。
 
    ```bash
@@ -192,7 +221,7 @@ docker compose up --build
 ```
 
 - PR に書かれた確認手順を http://localhost:3000 で行う。
-- `migrate` が「古い」と止まったら（PR にマイグレーションがある）、`npm run docker:db-reset` で作り直す。手元のデータを残したい場合は先にバックアップを取る（[データとボリューム](#データとボリューム)）。
+- PR にマイグレーションの変更があっても、`docker compose up` の `migrate` が手元のデータを残したまま適用する。
 - 確認が終わったら `git switch main` で戻る。PR のマイグレーションを入れた DB のままだと `main` で動かないことがあるので、そのときも `npm run docker:db-reset` で作り直す。
 - ローカルでは Turnstile はテストキー、通知は再現しない、AI は `GEMINI_API_KEY` が無ければ内蔵ジェネレータになる。これらに関わる変更は、本番デプロイ後の確認で見る。
 

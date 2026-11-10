@@ -32,6 +32,12 @@ def test_static_session_and_workspace(mock_client: TestClient) -> None:
     assert mock_client.get("/api/projects").json() == bootstrap["projects"]
 
 
+def test_health_skips_db(mock_client: TestClient) -> None:
+    body = mock_client.get("/api/health").json()
+    assert body["status"] == "ok"
+    assert body["db"] == "skipped"
+
+
 def test_unknown_project_is_404(mock_client: TestClient) -> None:
     other = "00000000-0000-0000-0000-000000000000"
     assert mock_client.get(f"/api/projects/{other}/data").status_code == 404

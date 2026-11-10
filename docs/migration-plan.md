@@ -191,7 +191,7 @@
 | 8 | ゲストの掃除条件 | 有効なセッションが無く、30 日以上アクセスのないゲストをデータの有無に関係なく削除 |
 | 9 | 日次クォータの日付 | JST |
 | 10 | service_role | anon / authenticated と同じく idea_ws の権限を REVOKE |
-| 11 | 本番のマイグレーション適用 | Supabase CLI の `supabase db push --db-url`（直接接続、postgres ロール） |
+| 11 | 本番のマイグレーション適用 | ~~Supabase CLI の `supabase db push --db-url`~~ → 冪等なマイグレーション（`supabase/migrations/init.sql` など日付なしの名前）を psql で名前順に流す（直接接続、postgres ロール）。本番 DB の作成前に、旧マイグレーション 8 本を最新状態の `init.sql` に統合した |
 | 12 | idea_ws_app のパスワード | マイグレーションではログイン不可で作成。本番は手作業で設定（docs/supabase-setup.md） |
 
 ### Phase 6 で追加した決定
