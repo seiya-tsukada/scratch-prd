@@ -38,7 +38,6 @@ const CODE_MESSAGES: Record<string, string> = {
   invalid_credentials: 'メールアドレスまたはパスワードが正しくありません。',
   invalid_password: 'パスワードが正しくありません。',
   not_registered: 'アカウント登録後に利用できます。',
-  mock_mode: 'デモ環境のため保存できません（データベース未接続）。表示はサンプルデータです。',
 };
 
 const QUOTA_KIND_LABELS: Record<QuotaExceededDetail['kind'], string> = {

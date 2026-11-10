@@ -13,7 +13,6 @@ from psycopg import errors as pg_errors
 
 from backend.app import config
 from backend.app.db import create_pool
-from backend.app.mock import router as mock_router
 from backend.app.routers import account, ai, auth, cron, events, health, workspace
 from backend.app.services.workspace_repo import ConflictError, LimitExceededError, NotFoundError, TagExistsError
 
@@ -22,9 +21,6 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    if config.get_settings().use_mock:
-        yield
-        return
     pool = create_pool(config.get_settings().effective_database_url)
     await pool.open()
     app.state.pool = pool
@@ -101,15 +97,10 @@ async def limit_exceeded(request: Request, exc: LimitExceededError) -> JSONRespo
     return JSONResponse(status_code=422, content={"detail": detail})
 
 
-if config.get_settings().use_mock:
-    # DB なしのモック（Supabase を用意するまでの一時的な構成。Vercel 上で DATABASE_URL が無いときも自動でこちら）
-    logger.warning("MOCK mode: DB に接続せず固定のサンプルで応答します（DATABASE_URL 未設定または MOCK_BACKEND=true）")
-    app.include_router(mock_router.router, prefix="/api")
-else:
-    app.include_router(health.router, prefix="/api")
-    app.include_router(auth.router, prefix="/api")
-    app.include_router(account.router, prefix="/api")
-    app.include_router(cron.router, prefix="/api")
-    app.include_router(ai.router, prefix="/api")
-    app.include_router(workspace.router, prefix="/api")
-    app.include_router(events.router, prefix="/api")
+app.include_router(health.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
+app.include_router(account.router, prefix="/api")
+app.include_router(cron.router, prefix="/api")
+app.include_router(ai.router, prefix="/api")
+app.include_router(workspace.router, prefix="/api")
+app.include_router(events.router, prefix="/api")

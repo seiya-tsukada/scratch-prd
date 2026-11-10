@@ -11,42 +11,11 @@
 - `api/index.py` は `backend.app.main` の `app` を公開するだけの入口。処理はすべて `backend/` に書く。`api/` に `.py` を増やすとそれぞれが別の Function になるので、増やさない（`__init__.py` も置かない）
 - Python の依存は `pyproject.toml` + `uv.lock`、バージョンは `.python-version`（3.12）から Vercel が読む
 - 画面のレスポンスヘッダー（CSP など）は `vercel.json` の `headers`、API のヘッダーは `main.py`。値は同じにする（`backend/tests/test_deploy.py` が CSP の一致を検証）
-- DB は Supabase の Postgres（`scratch_prd` スキーマ）。準備できるまでは下の「モックでのデプロイ」
+- DB は Supabase の Postgres（`scratch_prd` スキーマ）。本番で `DATABASE_URL` が未設定なら API は起動しない
 - 参考: [Python runtime](https://vercel.com/docs/functions/runtimes/python) / [api ディレクトリ](https://vercel.com/docs/functions/runtimes/python/api-directory) / [vercel.json](https://vercel.com/docs/project-configuration/vercel-json) / [Cron jobs](https://vercel.com/docs/cron-jobs)
 - ⚠️ ルートの `pyproject.toml` に FastAPI があるため、Framework Preset が FastAPI と自動判定されると `api/` が Function にならない（公式ドキュメント: Python のフレームワークプリセットが `api/` より優先される）。`vercel.json` の `"framework": "vite"` で Vite に固定している。Project Settings 側でも Vite になっていることを確認する
 
-ローカルの `vercel build`（CLI 65.11.0）で、`api/index.func`（python3.12・maxDuration 90）が作られ、`backend/` と `mock/fixture.json` が含まれ `dist/`・`node_modules/` が含まれないこと、ルートが上の図のとおりになることを確認済み。
-
-## モックでのデプロイ（Supabase を用意するまでの一時的な構成）
-
-API が DB に接続せず `backend/app/mock/` の固定サンプルを返すモード。Supabase・Turnstile・Resend（メール送信は未実装）が無くてもデプロイして画面を確認できる。
-
-**環境変数を何も設定しなくてよい。** Vercel 上（Vercel が自動で設定する `VERCEL_ENV` がある）で `DATABASE_URL` が無ければ、自動でモックになる（`config.Settings.use_mock`。`check:bundle` も同じ規則）。
-
-| `MOCK_BACKEND` | `DATABASE_URL` | 動作 |
-|---|---|---|
-| 未設定 | 未設定 | Vercel 上ならモック。ローカルは `localhost:54322` の DB に接続 |
-| 未設定 | あり | DB を使う（本番では下の設定検査が有効） |
-| `true` | 問わない | モック |
-| `false` | 問わない | DB を使う（自動切り替えを止める。`DATABASE_URL` が無ければローカルの DB） |
-
-- ログイン中ユーザーは常に同じゲスト、プロジェクトはサンプル 1 件（初回の案内は済み扱い）
-- PRD 生成は内蔵ジェネレータで応答する（「内蔵ジェネレータで作成しました」と表示される）
-- 保存・変更（メモの作成・編集、登録・ログインなど）は 503 `mock_mode` になり、画面に「デモ環境のため保存できません」と出る
-- 本番用の設定検査（`config.Settings`）と `check:bundle` の Turnstile サイトキーの検査は行わない。`SESSION_TOKEN_PEPPER` も不要
-- 起動時に Function のログへ `MOCK mode: ...` の警告を出す
-
-手順: GitHub リポジトリを Vercel に Import → Node.js を 24.x にする → `main` をデプロイ → `https://<デプロイ URL>/api/health` が `"mode":"mock"` を返すことを確認する。
-
-> ⚠️ Supabase 接続後に `DATABASE_URL` を消すと、エラーにならずモックに切り替わる（データは見えなくなるが漏れはしない）。Supabase 接続時に `MOCK_BACKEND=false` も設定しておくと、`DATABASE_URL` が無いときに起動時エラーで気付ける。
-
-ローカルで同じ状態を確認する場合（`npm run build` 済み）:
-
-```bash
-VERCEL_ENV=production MOCK_BACKEND=true COOKIE_SECURE=false ALLOWED_ORIGINS=http://localhost:8010 uv run uvicorn backend.app.main:app --port 8010
-```
-
-Supabase に切り替えるときは、下の「環境変数」の表どおりに設定し（`MOCK_BACKEND=false` を推奨）、`backend/app/mock/` と `main.py` / `config.py` / `scripts/check-bundle-secrets.mjs` / `src/services/apiClient.ts`（`mock_mode`）のモック分岐を削除する。
+ローカルの `vercel build`（CLI 65.11.0）で、`api/index.func`（python3.12・maxDuration 90）が作られ、`backend/` が含まれ `dist/`・`node_modules/` が含まれないこと、ルートが上の図のとおりになることを確認済み。
 
 ## 環境の分け方
 
@@ -74,10 +43,9 @@ Vercel の Project Settings → Environment Variables で、環境ごとに設�
 | `CRON_SECRET` | 16 文字以上のランダム文字列 | 任意 | `GET /api/cron/cleanup` の認証 |
 | `GEMINI_API_KEY` | 任意 | 任意 | 未設定なら内蔵ジェネレータで応答（`usedFallback: true`） |
 | `GEMINI_MODEL` | 任意（既定 `gemini-3.8-flash`） | 任意 | |
-| `MOCK_BACKEND` | Supabase 接続後は `false`（推奨） | 不要 | 未設定なら Vercel 上で `DATABASE_URL` が無いときモック。`true` / `false` で固定（上の「モックでのデプロイ」） |
 
 > Production（Vercel が `VERCEL_ENV=production` を設定する）では、次のどれかに当てはまると API が起動しない（ローカル用の設定のまま本番に出さないため）。
-> `DATABASE_URL` がローカル（localhost / db）・`SESSION_TOKEN_PEPPER` が 32 文字未満・`TURNSTILE_SECRET_KEY` が未設定かテスト用・`COOKIE_SECURE` / `TRUST_PROXY_HEADERS` が `true` でない・`CRON_SECRET` が 16 文字未満。
+> `DATABASE_URL` が未設定かローカル（localhost / db）・`SESSION_TOKEN_PEPPER` が 32 文字未満・`TURNSTILE_SECRET_KEY` が未設定かテスト用・`COOKIE_SECURE` / `TRUST_PROXY_HEADERS` が `true` でない・`CRON_SECRET` が 16 文字未満。
 > ビルドでも `VITE_TURNSTILE_SITE_KEY` が未設定かテスト用なら `check:bundle` が失敗する。
 
 ランダムな値の作り方:
