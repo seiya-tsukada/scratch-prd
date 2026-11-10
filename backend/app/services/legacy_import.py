@@ -61,7 +61,7 @@ def _remap_prd_body(body: LegacyPrdBody, note_ids: dict[str, UUID]) -> dict[str,
 
 
 async def import_legacy_project(conn: Conn, user_id: UUID, data: LegacyProjectImport) -> ImportResult:
-    cur = await conn.execute("select count(*) from idea_ws.projects where user_id = %s", (user_id,))
+    cur = await conn.execute("select count(*) from scratch_prd.projects where user_id = %s", (user_id,))
     row = await cur.fetchone()
     if row and row["count"] >= config.MAX_PROJECTS_PER_USER:
         raise LimitExceededError("projects", config.MAX_PROJECTS_PER_USER)
@@ -71,7 +71,7 @@ async def import_legacy_project(conn: Conn, user_id: UUID, data: LegacyProjectIm
         project_id = await _insert_id(
             conn,
             """
-            insert into idea_ws.projects (user_id, name, description, created_at, updated_at)
+            insert into scratch_prd.projects (user_id, name, description, created_at, updated_at)
             values (%s, %s, %s, coalesce(%s, now()), coalesce(%s, now())) returning id
             """,
             (user_id, p.name, p.description, p.created_at, p.updated_at),
@@ -85,7 +85,7 @@ async def import_legacy_project(conn: Conn, user_id: UUID, data: LegacyProjectIm
             if n.section_id in prd_section_ids:
                 await conn.execute(
                     """
-                    insert into idea_ws.prd_documents
+                    insert into scratch_prd.prd_documents
                       (user_id, project_id, title, content, generation_mode, source_note_ids, created_at, updated_at)
                     values (%s, %s, %s, %s, 'unknown', '{}', coalesce(%s, now()), coalesce(%s, now()))
                     """,
@@ -96,7 +96,7 @@ async def import_legacy_project(conn: Conn, user_id: UUID, data: LegacyProjectIm
             note_ids[n.id] = await _insert_id(
                 conn,
                 """
-                insert into idea_ws.notes
+                insert into scratch_prd.notes
                   (user_id, project_id, title, content, position, created_at, updated_at)
                 values (%s, %s, %s, %s, %s, coalesce(%s, now()), coalesce(%s, now())) returning id
                 """,
@@ -108,7 +108,7 @@ async def import_legacy_project(conn: Conn, user_id: UUID, data: LegacyProjectIm
             prd_id = await _insert_id(
                 conn,
                 """
-                insert into idea_ws.prd_documents
+                insert into scratch_prd.prd_documents
                   (user_id, project_id, title, content, generation_mode, detail_level, source_note_ids,
                    facts, proposals, open_questions, contradictions, version, created_at, updated_at)
                 values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, coalesce(%s, now()), coalesce(%s, now()))
@@ -139,7 +139,7 @@ async def import_legacy_project(conn: Conn, user_id: UUID, data: LegacyProjectIm
                 version_body = _remap_prd_body(v, note_ids)
                 await conn.execute(
                     """
-                    insert into idea_ws.prd_versions
+                    insert into scratch_prd.prd_versions
                       (user_id, prd_document_id, version_number, title, content, generation_mode, detail_level,
                        source_note_ids, facts, proposals, open_questions, contradictions, summary, created_at)
                     values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, coalesce(%s, now()))
@@ -170,7 +170,7 @@ async def import_legacy_project(conn: Conn, user_id: UUID, data: LegacyProjectIm
             ]
             await conn.execute(
                 """
-                insert into idea_ws.workspace_preferences (user_id, project_id, pane_count, panes, active_pane_id)
+                insert into scratch_prd.workspace_preferences (user_id, project_id, pane_count, panes, active_pane_id)
                 values (%s, %s, %s, %s, %s)
                 """,
                 (user_id, project_id, prefs.pane_count, Jsonb(panes), prefs.active_pane_id),

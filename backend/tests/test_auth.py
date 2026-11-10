@@ -17,7 +17,7 @@ COOKIE = config.SESSION_COOKIE_NAME
 
 def session_rows(db: psycopg.Connection[Any]) -> list[tuple[Any, ...]]:
     return db.execute(
-        "select token_hash, revoked_at, expires_at - now() > interval '179 days' from idea_ws.sessions"
+        "select token_hash, revoked_at, expires_at - now() > interval '179 days' from scratch_prd.sessions"
     ).fetchall()
 
 
@@ -46,7 +46,7 @@ def test_create_guest_sets_secure_cookie_and_stores_only_hash(
     assert token.encode() not in bytes(token_hash)
     assert revoked_at is None and long_lived
 
-    row = db_admin.execute("select is_guest, email from idea_ws.users where id = %s", (user["id"],)).fetchone()
+    row = db_admin.execute("select is_guest, email from scratch_prd.users where id = %s", (user["id"],)).fetchone()
     assert row == (True, None)
 
 
@@ -68,7 +68,7 @@ def test_create_guest_is_idempotent_with_existing_session(
     second = client.post("/api/auth/guest", json={"turnstileToken": "tok"}).json()["user"]
 
     assert second["id"] == first["id"]
-    assert db_admin.execute("select count(*) from idea_ws.users").fetchone() == (1,)
+    assert db_admin.execute("select count(*) from scratch_prd.users").fetchone() == (1,)
     assert len(turnstile.calls) == 1
 
 
@@ -81,7 +81,7 @@ def test_create_guest_rejects_failed_turnstile(
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "turnstile_failed"
     assert COOKIE not in client.cookies
-    assert db_admin.execute("select count(*) from idea_ws.users").fetchone() == (0,)
+    assert db_admin.execute("select count(*) from scratch_prd.users").fetchone() == (0,)
 
 
 def test_create_guest_requires_token(client: TestClient) -> None:
@@ -101,7 +101,7 @@ def test_create_guest_is_rate_limited_per_ip(client: TestClient) -> None:
 
 def test_rate_limit_key_does_not_contain_raw_ip(client: TestClient, db_admin: psycopg.Connection[Any]) -> None:
     login_guest(client)
-    [(key,)] = db_admin.execute("select key from idea_ws.rate_limit_buckets").fetchall()
+    [(key,)] = db_admin.execute("select key from scratch_prd.rate_limit_buckets").fetchall()
     assert "testclient" not in key
     assert key == f"guest_create:{security.hash_ip('testclient').hex()}"
 
@@ -136,7 +136,7 @@ def test_unknown_token_is_rejected(client: TestClient) -> None:
 
 def test_expired_session_is_rejected(client: TestClient, db_admin: psycopg.Connection[Any]) -> None:
     login_guest(client)
-    db_admin.execute("update idea_ws.sessions set expires_at = now() - interval '1 second'")
+    db_admin.execute("update scratch_prd.sessions set expires_at = now() - interval '1 second'")
     assert client.get("/api/auth/me").status_code == 401
 
 
@@ -163,26 +163,29 @@ def test_logout_without_session_is_ok(client: TestClient) -> None:
 def test_session_touch_is_throttled(client: TestClient, db_admin: psycopg.Connection[Any]) -> None:
     login_guest(client)
     db_admin.execute(
-        "update idea_ws.sessions set last_seen_at = now() - interval '5 minutes', expires_at = now() + interval '1 day'"
+        "update scratch_prd.sessions "
+        "set last_seen_at = now() - interval '5 minutes', expires_at = now() + interval '1 day'"
     )
-    db_admin.execute("update idea_ws.users set last_active_at = now() - interval '5 minutes'")
+    db_admin.execute("update scratch_prd.users set last_active_at = now() - interval '5 minutes'")
 
     response = client.get("/api/auth/me")
     assert "set-cookie" not in response.headers
-    assert db_admin.execute("select expires_at < now() + interval '2 days' from idea_ws.sessions").fetchone() == (True,)
+    assert db_admin.execute("select expires_at < now() + interval '2 days' from scratch_prd.sessions").fetchone() == (
+        True,
+    )
 
-    db_admin.execute("update idea_ws.sessions set last_seen_at = now() - interval '11 minutes'")
-    db_admin.execute("update idea_ws.users set last_active_at = now() - interval '11 minutes'")
+    db_admin.execute("update scratch_prd.sessions set last_seen_at = now() - interval '11 minutes'")
+    db_admin.execute("update scratch_prd.users set last_active_at = now() - interval '11 minutes'")
 
     response = client.get("/api/auth/me")
     assert "set-cookie" in response.headers  # 有効期限を延ばした Cookie を再発行
     assert db_admin.execute(
         "select expires_at > now() + interval '179 days', last_seen_at > now() - interval '1 minute' "
-        "from idea_ws.sessions"
+        "from scratch_prd.sessions"
     ).fetchone() == (True, True)
-    assert db_admin.execute("select last_active_at > now() - interval '1 minute' from idea_ws.users").fetchone() == (
-        True,
-    )
+    assert db_admin.execute(
+        "select last_active_at > now() - interval '1 minute' from scratch_prd.users"
+    ).fetchone() == (True,)
 
 
 # ---------------------------------------------------------------- Origin（CSRF）

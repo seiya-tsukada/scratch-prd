@@ -10,7 +10,7 @@ from backend.scripts.db_migrate import SEED_FILE
 
 
 def active_sample(conn: psycopg.Connection) -> dict[str, Any]:
-    row = conn.execute("select content from idea_ws.sample_contents where is_active").fetchone()
+    row = conn.execute("select content from scratch_prd.sample_contents where is_active").fetchone()
     assert row is not None
     content: dict[str, Any] = row[0]
     return content
@@ -39,4 +39,4 @@ def test_sample_content_references_are_consistent(app: psycopg.Connection) -> No
 
 def test_seed_is_idempotent(admin: psycopg.Connection) -> None:
     admin.execute(SEED_FILE.read_text(encoding="utf-8").encode())
-    assert admin.execute("select count(*) from idea_ws.sample_contents").fetchone() == (1,)
+    assert admin.execute("select count(*) from scratch_prd.sample_contents").fetchone() == (1,)

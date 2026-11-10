@@ -12,7 +12,9 @@ from .test_password_auth import login, register
 
 
 def onboarding_events(db: psycopg.Connection[Any]) -> list[str]:
-    rows = db.execute("select event_name from idea_ws.events where event_name like 'onboarding_%' order by created_at")
+    rows = db.execute(
+        "select event_name from scratch_prd.events where event_name like 'onboarding_%' order by created_at"
+    )
     return [r[0] for r in rows.fetchall()]
 
 
@@ -26,7 +28,7 @@ def test_finishing_onboarding_is_recorded_once(
     assert guest_client.post("/api/account/onboarding", json={"result": "completed"}).status_code == 204
 
     assert guest_client.get("/api/auth/me").json()["user"]["onboardingDone"] is True
-    assert db_admin.execute("select onboarding_result from idea_ws.users").fetchone() == (result,)
+    assert db_admin.execute("select onboarding_result from scratch_prd.users").fetchone() == (result,)
     assert onboarding_events(db_admin) == [f"onboarding_{result}"]
 
 

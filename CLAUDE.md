@@ -21,7 +21,7 @@ Vercel（同一リポジトリ・同一ドメイン）
         auth / workspace / ai / events / account / cron
               │  psycopg 3（Supavisor transaction mode）
               ▼
-        Supabase Postgres  schema: idea_ws
+        Supabase Postgres  schema: scratch_prd
         （Data API 非公開・RLS 有効・anon/authenticated からは REVOKE）
 ```
 
@@ -29,8 +29,8 @@ Vercel（同一リポジトリ・同一ドメイン）
 |---|---|
 | フロント | Vite の静的ビルド。DB には一切触らず、すべて `/api` 経由 |
 | バックエンド | Python（FastAPI）。旧 Express サーバーは Phase 4b で削除済み |
-| DB | Supabase の Postgres を**マネージド Postgres として**使う。専用スキーマ `idea_ws` のみ |
-| 認証 | **自前実装**。ユーザーは `idea_ws.users`。セッションは不透明トークン（Cookie）＋ DB にハッシュ保存。JWT は使わない |
+| DB | Supabase の Postgres を**マネージド Postgres として**使う。専用スキーマ `scratch_prd` のみ |
+| 認証 | **自前実装**。ユーザーは `scratch_prd.users`。セッションは不透明トークン（Cookie）＋ DB にハッシュ保存。JWT は使わない |
 | 認可 | すべて Python 側。ユーザー配下データのクエリには必ず `user_id` 条件を付ける |
 | AI | Gemini（公式 Python SDK `google-genai`）。responseSchema による構造化出力。失敗時は内蔵フォールバックで応答し、レスポンスでその旨を明示 |
 
@@ -38,10 +38,10 @@ Vercel（同一リポジトリ・同一ドメイン）
 
 | データ | 置き場所 |
 |---|---|
-| ユーザー・認証（users, user_identities, sessions, email_login_tokens, oauth_states） | `idea_ws` |
-| ユーザーデータ（projects, notes, prd_documents, prd_versions, workspace_preferences） | `idea_ws` |
-| コンテンツ（sample_contents） | `idea_ws`（デプロイ無しで初回体験を調整するため） |
-| グロース計測（events, ai_generations, api_usage） | `idea_ws` |
+| ユーザー・認証（users, user_identities, sessions, email_login_tokens, oauth_states） | `scratch_prd` |
+| ユーザーデータ（projects, notes, prd_documents, prd_versions, workspace_preferences） | `scratch_prd` |
+| コンテンツ（sample_contents） | `scratch_prd`（デプロイ無しで初回体験を調整するため） |
+| グロース計測（events, ai_generations, api_usage） | `scratch_prd` |
 | 秘密情報（DB 接続文字列・API キー・pepper 等） | Vercel の環境変数のみ。フロントに渡してよいのは `VITE_` 接頭辞の公開値だけ |
 | ブラウザ | セッション Cookie（httpOnly）のみ。旧 localStorage（`idea_workspace_*_v2`）は初回インポート後に削除する |
 
@@ -60,9 +60,9 @@ Vercel（同一リポジトリ・同一ドメイン）
 - **Supabase Auth / `auth.users` / `auth.uid()` を使わない。** Supabase Auth 前提の RLS ポリシーも書かない。
 - **フロントから DB に接続しない。** `@supabase/supabase-js` などをフロントに入れない。
 - **Supabase のキー（anon / service_role / publishable / secret）や DB 接続文字列をフロントに渡さない。** `VITE_` 接頭辞の環境変数に秘密情報を入れない。
-- **`public` スキーマにテーブル・関数・ビューを作らない。** すべて `idea_ws` に作る。
-- **`idea_ws` を Supabase Data API（PostgREST）の Exposed schemas に追加しない。**
-- **RLS を無効化しない。** `idea_ws` の全テーブルで RLS を有効にし、ポリシーはアプリ用ロール `idea_ws_app` 向けだけを作る（`anon` / `authenticated` / `service_role` 向けは作らない）。
+- **`public` スキーマにテーブル・関数・ビューを作らない。** すべて `scratch_prd` に作る。
+- **`scratch_prd` を Supabase Data API（PostgREST）の Exposed schemas に追加しない。**
+- **RLS を無効化しない。** `scratch_prd` の全テーブルで RLS を有効にし、ポリシーはアプリ用ロール `idea_ws_app` 向けだけを作る（`anon` / `authenticated` / `service_role` 向けは作らない）。
 - **ユーザー配下データのクエリで `user_id` 条件を省略しない。** 他人のリソース ID を指定されたら 404 を返す（403 で存在を漏らさない）。
 - セッショントークン・ログイントークンを平文で DB に保存しない（HMAC ハッシュのみ）。IP アドレスを生で保存しない。
 - JWT をセッションに使わない。`localStorage` に認証情報を置かない。
@@ -146,7 +146,7 @@ DB（Phase 1〜）:
 ```bash
 docker compose up -d db db-test             # db（開発用 :54322）と db-test（pytest 用 :54323, tmpfs）
 uv run python -m backend.scripts.db_migrate # 開発用 DB にマイグレーション + seed を冪等に適用（データは残す）
-uv run python -m backend.scripts.db_reset   # 開発用 DB の idea_ws を作り直す（データは消える）
+uv run python -m backend.scripts.db_reset   # 開発用 DB の scratch_prd を作り直す（データは消える）
 uv run pytest                               # db-test を作り直してテスト
 uv run ruff check backend api && uv run ruff format --check backend api && uv run mypy
 ```
@@ -187,7 +187,7 @@ Workspace API（Phase 4a〜）:
 - 環境変数を足したら `docs/deploy.md` の表と `.env.example` を更新する。
 - `VERCEL_ENV=production` では `config.Settings` がローカル用の値（localhost の DB・テスト用 Turnstile キー・短い pepper・`COOKIE_SECURE=false` など）を拒否して起動しない。`check:bundle` も本番ビルドにテスト用サイトキーがあれば失敗する。
 - セクションは廃止した。メモと PRD は別のエンティティで、サイドバーの「メモ」「PRD」タブにそれぞれ更新日時の降順で並ぶ。PRD は `source_note_ids` で生成元メモを参照する（メモを消しても PRD は残り、画面では「削除済み」と出す）。再生成は元の PRD を変えず、常に新しい PRD を作る。`generation_mode = 'unknown'` は旧データ（PRD セクションのメモ）から変換した PRD。
-- メモのタグはプロジェクト単位（`idea_ws.tags` / `note_tags`）。名前は大文字小文字を区別せずユニーク（重複は 409 `tag_exists`）、色はパレットのキー（`src/config/tags.ts` と `config.TAG_COLORS`）。メモのタグは `PUT /api/notes/{id}/tags` で一覧ごと置き換え、メモの `updated_at` は変えない。PRD にはタグを付けない。
+- メモのタグはプロジェクト単位（`scratch_prd.tags` / `note_tags`）。名前は大文字小文字を区別せずユニーク（重複は 409 `tag_exists`）、色はパレットのキー（`src/config/tags.ts` と `config.TAG_COLORS`）。メモのタグは `PUT /api/notes/{id}/tags` で一覧ごと置き換え、メモの `updated_at` は変えない。PRD にはタグを付けない。
 - PRD 生成の入口は `PrdGeneratorModal` だけ（入力元は「メモから」と「テキストを貼り付け」。貼り付けた内容はメモにしてから使う）。初回の案内も同じダイアログを `isOnboarding` で開く。PRD 生成は `App.tsx` の `generatePrdFromNotes` に集約している。殴り書きの整形（`/api/structure-rough-note`）は廃止した（PRD 生成のプロンプトが整形を兼ねる）。
 - 再生成では PRD 本文を AI に渡さず、`src/utils/prdLoop.ts` の `buildPreviousPrd` で作った要約（`previousPrd`）を渡す。未決事項への回答はタイトルが「決定: 〜」のメモで、タイトルの形式（`decisionTitle`）で回答済みを判定している（Phase 8）。サーバー側の秘密は `scripts/check-bundle-secrets.mjs` の `SERVER_ONLY_ENV` にも足す。
 

@@ -9,7 +9,7 @@
 
 \if :{?email}
   -- email は citext のため大文字小文字を区別しない
-  delete from idea_ws.users where email = :'email' returning id, email, created_at;
+  delete from scratch_prd.users where email = :'email' returning id, email, created_at;
 \else
   \echo '削除するユーザーのメールアドレスを -v email=... で指定してください'
   do $$ begin raise exception 'email required (-v email=...)'; end $$;

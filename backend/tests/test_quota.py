@@ -46,13 +46,13 @@ def test_guest_prd_quota(guest_client: TestClient) -> None:
 
 
 def test_registered_user_has_higher_quota(guest_client: TestClient, db_admin: psycopg.Connection[Any]) -> None:
-    db_admin.execute("update idea_ws.users set is_guest = false, email = 'a@example.com'")
+    db_admin.execute("update scratch_prd.users set is_guest = false, email = 'a@example.com'")
     use_gemini(FakeGemini(GeneratedPrd(markdown="# ok")))
 
     for _ in range(config.AI_DAILY_QUOTAS["guest"]["prd"] + 1):
         assert guest_client.post("/api/generate-prd", json=PRD_REQUEST).status_code == 200
 
-    db_admin.execute("update idea_ws.api_usage set count = %s", (config.AI_DAILY_QUOTAS["registered"]["prd"],))
+    db_admin.execute("update scratch_prd.api_usage set count = %s", (config.AI_DAILY_QUOTAS["registered"]["prd"],))
     response = guest_client.post("/api/generate-prd", json=PRD_REQUEST)
     assert response.status_code == 429
     assert response.json()["detail"]["canUpgradeByRegistering"] is False
@@ -62,7 +62,7 @@ def test_no_quota_consumed_without_api_key(guest_client: TestClient, db_admin: p
     use_gemini(None)
     for _ in range(config.AI_DAILY_QUOTAS["guest"]["prd"] + 2):
         assert guest_client.post("/api/generate-prd", json=PRD_REQUEST).json()["usedFallback"] is True
-    assert db_admin.execute("select count(*) from idea_ws.api_usage").fetchone() == (0,)
+    assert db_admin.execute("select count(*) from scratch_prd.api_usage").fetchone() == (0,)
 
 
 def test_ai_generations_are_recorded(guest_client: TestClient, db_admin: psycopg.Connection[Any]) -> None:
@@ -77,7 +77,7 @@ def test_ai_generations_are_recorded(guest_client: TestClient, db_admin: psycopg
         """
         select kind, mode, detail_level, note_count, input_chars, used_fallback, error_type, model,
                latency_ms >= 0, user_id is not null
-        from idea_ws.ai_generations order by created_at, kind
+        from scratch_prd.ai_generations order by created_at, kind
         """
     ).fetchall()
     assert sorted(rows, key=str) == sorted(

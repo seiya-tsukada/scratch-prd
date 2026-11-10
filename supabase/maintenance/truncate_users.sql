@@ -16,9 +16,9 @@ select :'confirm' = 'yes' as confirmed \gset
 
 \if :confirmed
   begin;
-  select count(*) as users_before from idea_ws.users;
-  truncate table idea_ws.users cascade;
-  select count(*) as users_after from idea_ws.users;
+  select count(*) as users_before from scratch_prd.users;
+  truncate table scratch_prd.users cascade;
+  select count(*) as users_after from scratch_prd.users;
   commit;
 \else
   \echo '全ユーザーのデータを消します。実行するには -v confirm=yes を付けてください'

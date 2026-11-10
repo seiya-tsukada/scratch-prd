@@ -19,7 +19,9 @@ from .test_password_auth import PASSWORD, add_note, login, register
 
 
 def events(db: psycopg.Connection[Any]) -> list[tuple[str, dict[str, Any]]]:
-    rows = db.execute("select event_name, properties from idea_ws.events order by created_at, event_name").fetchall()
+    rows = db.execute(
+        "select event_name, properties from scratch_prd.events order by created_at, event_name"
+    ).fetchall()
     return [(r[0], r[1]) for r in rows]
 
 
@@ -36,7 +38,7 @@ def test_client_event_is_recorded_with_session(guest_client: TestClient, db_admi
     )
     assert response.status_code == 204
     row = db_admin.execute(
-        "select properties, user_id is not null, session_id is not null from idea_ws.events "
+        "select properties, user_id is not null, session_id is not null from scratch_prd.events "
         "where event_name = 'signup_prompt_shown'"
     ).fetchone()
     assert row == ({"trigger": "quota"}, True, True)
@@ -58,7 +60,7 @@ def test_client_events_are_whitelisted(guest_client: TestClient, body: dict[str,
 
 def test_client_events_are_rate_limited(guest_client: TestClient, db_admin: psycopg.Connection[Any]) -> None:
     limit = config.EVENTS_RATE_LIMIT_PER_SESSION[0]
-    db_admin.execute("update idea_ws.rate_limit_buckets set count = 0")  # ゲスト作成分は別キー
+    db_admin.execute("update scratch_prd.rate_limit_buckets set count = 0")  # ゲスト作成分は別キー
     for _ in range(limit):
         assert guest_client.post("/api/events", json={"name": "app_opened"}).status_code == 204
     assert guest_client.post("/api/events", json={"name": "app_opened"}).status_code == 429

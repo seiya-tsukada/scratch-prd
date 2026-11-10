@@ -12,4 +12,4 @@
   \set days 30
 \endif
 
-select idea_ws.cleanup_inactive_guests(:'days'::integer) as guests_deleted;
+select scratch_prd.cleanup_inactive_guests(:'days'::integer) as guests_deleted;

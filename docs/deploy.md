@@ -11,7 +11,7 @@
 - `api/index.py` は `backend.app.main` の `app` を公開するだけの入口。処理はすべて `backend/` に書く。`api/` に `.py` を増やすとそれぞれが別の Function になるので、増やさない（`__init__.py` も置かない）
 - Python の依存は `pyproject.toml` + `uv.lock`、バージョンは `.python-version`（3.12）から Vercel が読む
 - 画面のレスポンスヘッダー（CSP など）は `vercel.json` の `headers`、API のヘッダーは `main.py`。値は同じにする（`backend/tests/test_deploy.py` が CSP の一致を検証）
-- DB は Supabase の Postgres（`idea_ws` スキーマ）。準備できるまでは下の「モックでのデプロイ」
+- DB は Supabase の Postgres（`scratch_prd` スキーマ）。準備できるまでは下の「モックでのデプロイ」
 - 参考: [Python runtime](https://vercel.com/docs/functions/runtimes/python) / [api ディレクトリ](https://vercel.com/docs/functions/runtimes/python/api-directory) / [vercel.json](https://vercel.com/docs/project-configuration/vercel-json) / [Cron jobs](https://vercel.com/docs/cron-jobs)
 - ⚠️ ルートの `pyproject.toml` に FastAPI があるため、Framework Preset が FastAPI と自動判定されると `api/` が Function にならない（公式ドキュメント: Python のフレームワークプリセットが `api/` より優先される）。`vercel.json` の `"framework": "vite"` で Vite に固定している。Project Settings 側でも Vite になっていることを確認する
 
@@ -91,7 +91,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 ## 初回セットアップ チェックリスト
 
 ### Supabase（本番の 1 プロジェクト）
-- [ ] [supabase-setup.md](supabase-setup.md) の手順を行う（マイグレーション・seed・`idea_ws_app` のパスワード・Data API に `idea_ws` を出さない）
+- [ ] [supabase-setup.md](supabase-setup.md) の手順を行う（マイグレーション・seed・`idea_ws_app` のパスワード・Data API に `scratch_prd` を出さない）
 - [ ] `DATABASE_URL`（Transaction pooler、ユーザー `idea_ws_app.<project-ref>`）を控える
 
 ### Cloudflare Turnstile
@@ -143,4 +143,4 @@ VERCEL_TELEMETRY_DISABLED=1 npx vercel@65.11.0 dev --local --listen 3000
 - Cron は Hobby プランでは 1 日 1 回（`0 18 * * *` = JST 3 時台のどこか）。失敗しても再試行されないが、掃除処理は何度実行しても安全
 - 関数の実行時間は `vercel.json` の `maxDuration: 90`（Gemini のタイムアウト 60 秒に余裕を持たせた値）
 - リクエスト本文は Vercel の上限が 4.5MB。旧データの取り込みはプロジェクト単位で 4MB までにしている
-- 集計は SQL Editor（postgres ロール）で `select * from idea_ws.funnel_daily;` / `select * from idea_ws.ai_fallback_daily;`
+- 集計は SQL Editor（postgres ロール）で `select * from scratch_prd.funnel_daily;` / `select * from scratch_prd.ai_fallback_daily;`

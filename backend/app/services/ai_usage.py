@@ -1,4 +1,4 @@
-"""AI 生成の記録（idea_ws.ai_generations）。記録に失敗しても応答は止めない"""
+"""AI 生成の記録（scratch_prd.ai_generations）。記録に失敗しても応答は止めない"""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ async def record_ai_generation(pool: AsyncConnectionPool[Conn], record: AiGenera
         async with pool.connection() as conn:
             await conn.execute(
                 """
-            insert into idea_ws.ai_generations
+            insert into scratch_prd.ai_generations
               (user_id, kind, mode, detail_level, note_count, input_chars, latency_ms, used_fallback, error_type, model)
             values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,

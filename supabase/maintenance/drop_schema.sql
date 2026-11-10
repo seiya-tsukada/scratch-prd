@@ -1,5 +1,5 @@
 -- ========================================================
--- メンテナンス: idea_ws スキーマを丸ごと削除する（テーブル・関数・ビュー・データ。取り消せない）
+-- メンテナンス: scratch_prd スキーマを丸ごと削除する（テーブル・関数・ビュー・データ。取り消せない）
 --   アプリ用ロール idea_ws_app はクラスタ全体のオブジェクトなので残る（パスワードもそのまま）
 --   誤って本番のデータを消さないよう、-v confirm=yes が無ければ何もせずに止まる
 --
@@ -17,8 +17,8 @@
 select :'confirm' = 'yes' as confirmed \gset
 
 \if :confirmed
-  drop schema if exists idea_ws cascade;
+  drop schema if exists scratch_prd cascade;
 \else
-  \echo 'idea_ws スキーマを削除します。実行するには -v confirm=yes を付けてください'
+  \echo 'scratch_prd スキーマを削除します。実行するには -v confirm=yes を付けてください'
   do $$ begin raise exception 'confirmation required (-v confirm=yes)'; end $$;
 \endif

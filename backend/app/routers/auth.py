@@ -55,7 +55,7 @@ async def create_guest(
         raise HTTPException(status_code=403, detail={"code": "turnstile_failed"})
 
     async with db.transaction():
-        cur = await db.execute("insert into idea_ws.users (is_guest) values (true) returning id")
+        cur = await db.execute("insert into scratch_prd.users (is_guest) values (true) returning id")
         row = await cur.fetchone()
         assert row is not None
         user_id = UUID(str(row["id"]))
@@ -139,7 +139,7 @@ async def login(body: LoginRequest, request: Request, response: Response, db: Db
             await start_session(db, request, response, creds.user_id, previous=None)
         else:
             await start_session(db, request, response, creds.user_id, previous=current)
-        await db.execute("update idea_ws.users set last_active_at = now() where id = %s", (creds.user_id,))
+        await db.execute("update scratch_prd.users set last_active_at = now() where id = %s", (creds.user_id,))
 
     if guest is not None and body.guest_data == "merge":
         await record_event(db, creds.user_id, "account_merged")

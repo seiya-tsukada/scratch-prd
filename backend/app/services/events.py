@@ -1,4 +1,4 @@
-"""グロース計測イベント（idea_ws.events）。
+"""グロース計測イベント（scratch_prd.events）。
 
 イベント名とプロパティはホワイトリスト制（EVENT_SCHEMAS）。メモ本文などの個人情報は入れない。
 API で起きる出来事はサーバー側で記録し（偽装できない）、画面上の操作だけをフロントから受け付ける（CLIENT_EVENTS）。
@@ -97,7 +97,7 @@ async def record_event(
     """イベントを記録する。target は接続かプール（外部 API を待つ処理ではプールを渡す）"""
     try:
         props = validate_properties(name, properties or {})
-        query = "insert into idea_ws.events (user_id, session_id, event_name, properties) values (%s, %s, %s, %s)"
+        query = "insert into scratch_prd.events (user_id, session_id, event_name, properties) values (%s, %s, %s, %s)"
         params = (user_id, session_id, name, Jsonb(props))
         if isinstance(target, AsyncConnectionPool):
             async with target.connection() as conn:

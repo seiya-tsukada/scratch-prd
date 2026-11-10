@@ -26,9 +26,9 @@ def verify_cron_secret(request: Request) -> None:
 async def cleanup(request: Request, db: Db) -> dict[str, int]:
     """アクセスの無いゲストと、期限切れのセッション・トークン・古いレート制限の記録を削除する"""
     verify_cron_secret(request)
-    cur = await db.execute("select idea_ws.cleanup_inactive_guests(%s) as guests", (INACTIVE_GUEST_DAYS,))
+    cur = await db.execute("select scratch_prd.cleanup_inactive_guests(%s) as guests", (INACTIVE_GUEST_DAYS,))
     guests = await cur.fetchone()
-    cur = await db.execute("select * from idea_ws.cleanup_expired_auth()")
+    cur = await db.execute("select * from scratch_prd.cleanup_expired_auth()")
     auth = await cur.fetchone()
     assert guests is not None and auth is not None
     return {"guestsDeleted": int(guests["guests"]), **{_camel(k): int(v) for k, v in auth.items()}}

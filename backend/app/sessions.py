@@ -39,7 +39,7 @@ async def create_session(conn: Conn, user_id: UUID, *, is_guest: bool, request: 
     user_agent = (request.headers.get("user-agent") or "")[: config.USER_AGENT_MAX_CHARS] or None
     await conn.execute(
         """
-        insert into idea_ws.sessions (user_id, token_hash, expires_at, user_agent, ip_hash)
+        insert into scratch_prd.sessions (user_id, token_hash, expires_at, user_agent, ip_hash)
         values (%s, %s, now() + %s, %s, %s)
         """,
         (user_id, security.hash_token(token), session_ttl(is_guest), user_agent, security.hash_ip(ip) if ip else None),
@@ -57,8 +57,8 @@ async def find_session(conn: Conn, request: Request, response: Response) -> Sess
         """
         select s.id as session_id, u.id as user_id, u.is_guest, u.email::text as email, u.display_name,
                u.onboarding_completed_at is not null as onboarding_done
-        from idea_ws.sessions s
-        join idea_ws.users u on u.id = s.user_id
+        from scratch_prd.sessions s
+        join scratch_prd.users u on u.id = s.user_id
         where s.token_hash = %s and s.revoked_at is null and s.expires_at > now()
         """,
         (security.hash_token(token),),
@@ -71,7 +71,7 @@ async def find_session(conn: Conn, request: Request, response: Response) -> Sess
     ttl = session_ttl(user.is_guest)
     cur = await conn.execute(
         """
-        update idea_ws.sessions
+        update scratch_prd.sessions
         set last_seen_at = now(), expires_at = now() + %s
         where id = %s and last_seen_at < now() - %s
         returning id
@@ -79,14 +79,14 @@ async def find_session(conn: Conn, request: Request, response: Response) -> Sess
         (ttl, user.session_id, config.SESSION_TOUCH_INTERVAL),
     )
     if await cur.fetchone():
-        await conn.execute("update idea_ws.users set last_active_at = now() where id = %s", (user.user_id,))
+        await conn.execute("update scratch_prd.users set last_active_at = now() where id = %s", (user.user_id,))
         security.set_session_cookie(response, token, ttl)
     return user
 
 
 async def revoke_session(conn: Conn, session_id: UUID) -> None:
     await conn.execute(
-        "update idea_ws.sessions set revoked_at = now() where id = %s and revoked_at is null", (session_id,)
+        "update scratch_prd.sessions set revoked_at = now() where id = %s and revoked_at is null", (session_id,)
     )
 
 

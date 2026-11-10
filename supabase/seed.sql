@@ -12,7 +12,7 @@
 --   key / noteKey はサンプル内の参照用。複製時に uuid を振り直す
 -- ========================================================
 
-insert into idea_ws.sample_contents (version, is_active, content)
+insert into scratch_prd.sample_contents (version, is_active, content)
 values (1, true, $sample${
   "project": {
     "name": "Idea Workspace (思考からPRDへ)",

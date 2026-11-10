@@ -75,7 +75,7 @@ def main() -> None:
 
     migrate_database(args.database_url, seed=not args.no_seed)
     seed_label = "なし" if args.no_seed else "あり"
-    print(f"idea_ws にマイグレーションを適用しました（{len(migration_files())} ファイル、seed={seed_label}）")
+    print(f"scratch_prd にマイグレーションを適用しました（{len(migration_files())} ファイル、seed={seed_label}）")
 
 
 if __name__ == "__main__":

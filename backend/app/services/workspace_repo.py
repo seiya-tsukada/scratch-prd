@@ -98,10 +98,10 @@ async def _update_owned(
     if not updates:
         return await _fetch_one(
             conn,
-            sql.SQL("select * from idea_ws.{} where id = %s and user_id = %s").format(sql.Identifier(table)),
+            sql.SQL("select * from scratch_prd.{} where id = %s and user_id = %s").format(sql.Identifier(table)),
             (row_id, user_id),
         )
-    query = sql.SQL("update idea_ws.{} set {} where id = %s and user_id = %s returning *").format(
+    query = sql.SQL("update scratch_prd.{} set {} where id = %s and user_id = %s returning *").format(
         sql.Identifier(table), _set_clause(updates)
     )
     return await _fetch_one(conn, query, (*updates.values(), row_id, user_id))
@@ -109,7 +109,7 @@ async def _update_owned(
 
 async def _delete_owned(conn: Conn, table: str, user_id: UUID, row_id: UUID) -> None:
     cur = await conn.execute(
-        sql.SQL("delete from idea_ws.{} where id = %s and user_id = %s").format(sql.Identifier(table)),
+        sql.SQL("delete from scratch_prd.{} where id = %s and user_id = %s").format(sql.Identifier(table)),
         (row_id, user_id),
     )
     if cur.rowcount == 0:
@@ -121,13 +121,15 @@ async def _delete_owned(conn: Conn, table: str, user_id: UUID, row_id: UUID) -> 
 
 async def list_projects(conn: Conn, user_id: UUID) -> list[Project]:
     rows = await _fetch_all(
-        conn, "select * from idea_ws.projects where user_id = %s order by created_at desc, id", (user_id,)
+        conn, "select * from scratch_prd.projects where user_id = %s order by created_at desc, id", (user_id,)
     )
     return [Project.model_validate(r) for r in rows]
 
 
 async def get_project(conn: Conn, user_id: UUID, project_id: UUID) -> Project:
-    row = await _fetch_one(conn, "select * from idea_ws.projects where id = %s and user_id = %s", (project_id, user_id))
+    row = await _fetch_one(
+        conn, "select * from scratch_prd.projects where id = %s and user_id = %s", (project_id, user_id)
+    )
     if row is None:
         raise NotFoundError
     return Project.model_validate(row)
@@ -138,12 +140,12 @@ async def create_project(conn: Conn, user_id: UUID, name: str, description: str)
         conn,
         "projects",
         config.MAX_PROJECTS_PER_USER,
-        "select count(*) from idea_ws.projects where user_id = %s",
+        "select count(*) from scratch_prd.projects where user_id = %s",
         (user_id,),
     )
     row = await _fetch_one(
         conn,
-        "insert into idea_ws.projects (user_id, name, description) values (%s, %s, %s) returning *",
+        "insert into scratch_prd.projects (user_id, name, description) values (%s, %s, %s) returning *",
         (user_id, name, description),
     )
     assert row is not None
@@ -167,7 +169,7 @@ async def delete_project(conn: Conn, user_id: UUID, project_id: UUID) -> None:
 # メモに付いているタグ ID（付けた順）。notes の別名を n として使う
 _NOTE_TAG_IDS = """
   array(
-    select nt.tag_id from idea_ws.note_tags nt
+    select nt.tag_id from scratch_prd.note_tags nt
     where nt.note_id = n.id and nt.user_id = n.user_id
     order by nt.created_at, nt.tag_id
   ) as tag_ids
@@ -177,7 +179,7 @@ _NOTE_TAG_IDS = """
 async def list_notes(conn: Conn, user_id: UUID, project_id: UUID) -> list[Note]:
     rows = await _fetch_all(
         conn,
-        f"select n.*, {_NOTE_TAG_IDS} from idea_ws.notes n "
+        f"select n.*, {_NOTE_TAG_IDS} from scratch_prd.notes n "
         "where n.user_id = %s and n.project_id = %s order by n.updated_at desc, n.id",
         (user_id, project_id),
     )
@@ -186,7 +188,9 @@ async def list_notes(conn: Conn, user_id: UUID, project_id: UUID) -> list[Note]:
 
 async def get_note(conn: Conn, user_id: UUID, note_id: UUID) -> Note:
     row = await _fetch_one(
-        conn, f"select n.*, {_NOTE_TAG_IDS} from idea_ws.notes n where n.id = %s and n.user_id = %s", (note_id, user_id)
+        conn,
+        f"select n.*, {_NOTE_TAG_IDS} from scratch_prd.notes n where n.id = %s and n.user_id = %s",
+        (note_id, user_id),
     )
     if row is None:
         raise NotFoundError
@@ -199,13 +203,13 @@ async def create_note(conn: Conn, user_id: UUID, project_id: UUID, body: NoteCre
         conn,
         "notes",
         config.MAX_NOTES_PER_PROJECT,
-        "select count(*) from idea_ws.notes where user_id = %s and project_id = %s",
+        "select count(*) from scratch_prd.notes where user_id = %s and project_id = %s",
         (user_id, project_id),
     )
     row = await _fetch_one(
         conn,
         """
-        insert into idea_ws.notes (user_id, project_id, title, content)
+        insert into scratch_prd.notes (user_id, project_id, title, content)
         values (%s, %s, %s, %s) returning *
         """,
         (user_id, project_id, body.title, body.content),
@@ -220,7 +224,7 @@ async def update_note(conn: Conn, user_id: UUID, note_id: UUID, body: NoteUpdate
         return await get_note(conn, user_id, note_id)
 
     query = sql.SQL(
-        "update idea_ws.notes set {} where id = %s and user_id = %s "
+        "update scratch_prd.notes set {} where id = %s and user_id = %s "
         "and (%s::timestamptz is null or updated_at = %s::timestamptz) returning *"
     ).format(_set_clause(updates))
     base = body.base_updated_at
@@ -243,20 +247,20 @@ async def set_note_tags(conn: Conn, user_id: UUID, note_id: UUID, body: NoteTags
     if tag_ids:
         owned = await _fetch_all(
             conn,
-            "select id from idea_ws.tags where user_id = %s and project_id = %s and id = any(%s)",
+            "select id from scratch_prd.tags where user_id = %s and project_id = %s and id = any(%s)",
             (user_id, note.project_id, tag_ids),
         )
         if len(owned) != len(tag_ids):
             raise NotFoundError
     async with conn.transaction():
         await conn.execute(
-            "delete from idea_ws.note_tags where user_id = %s and note_id = %s and not (tag_id = any(%s))",
+            "delete from scratch_prd.note_tags where user_id = %s and note_id = %s and not (tag_id = any(%s))",
             (user_id, note_id, tag_ids),
         )
         # 付けた順を保つため、1 件ずつ時刻をずらして入れる
         await conn.execute(
             """
-            insert into idea_ws.note_tags (note_id, tag_id, user_id, project_id, created_at)
+            insert into scratch_prd.note_tags (note_id, tag_id, user_id, project_id, created_at)
             select %s, t.id, %s, %s, now() + make_interval(secs => t.ord * 0.000001)
             from unnest(%s::uuid[]) with ordinality as t(id, ord)
             on conflict (note_id, tag_id) do nothing
@@ -272,14 +276,14 @@ async def set_note_tags(conn: Conn, user_id: UUID, note_id: UUID, body: NoteTags
 async def list_tags(conn: Conn, user_id: UUID, project_id: UUID) -> list[Tag]:
     rows = await _fetch_all(
         conn,
-        "select * from idea_ws.tags where user_id = %s and project_id = %s order by lower(name), id",
+        "select * from scratch_prd.tags where user_id = %s and project_id = %s order by lower(name), id",
         (user_id, project_id),
     )
     return [Tag.model_validate(r) for r in rows]
 
 
 async def _get_tag(conn: Conn, user_id: UUID, tag_id: UUID) -> Tag:
-    row = await _fetch_one(conn, "select * from idea_ws.tags where id = %s and user_id = %s", (tag_id, user_id))
+    row = await _fetch_one(conn, "select * from scratch_prd.tags where id = %s and user_id = %s", (tag_id, user_id))
     if row is None:
         raise NotFoundError
     return Tag.model_validate(row)
@@ -288,7 +292,7 @@ async def _get_tag(conn: Conn, user_id: UUID, tag_id: UUID) -> Tag:
 async def _tag_by_name(conn: Conn, user_id: UUID, project_id: UUID, name: str) -> Tag:
     row = await _fetch_one(
         conn,
-        "select * from idea_ws.tags where user_id = %s and project_id = %s and lower(name) = lower(%s)",
+        "select * from scratch_prd.tags where user_id = %s and project_id = %s and lower(name) = lower(%s)",
         (user_id, project_id, name),
     )
     if row is None:
@@ -303,14 +307,14 @@ async def create_tag(conn: Conn, user_id: UUID, project_id: UUID, body: TagCreat
         conn,
         "tags",
         config.MAX_TAGS_PER_PROJECT,
-        "select count(*) from idea_ws.tags where user_id = %s and project_id = %s",
+        "select count(*) from scratch_prd.tags where user_id = %s and project_id = %s",
         (user_id, project_id),
     )
     try:
         async with conn.transaction():
             row = await _fetch_one(
                 conn,
-                "insert into idea_ws.tags (user_id, project_id, name, color) values (%s, %s, %s, %s) returning *",
+                "insert into scratch_prd.tags (user_id, project_id, name, color) values (%s, %s, %s, %s) returning *",
                 (user_id, project_id, body.name, body.color),
             )
     except pg_errors.UniqueViolation:
@@ -363,7 +367,7 @@ async def _versions_by_prd(conn: Conn, user_id: UUID, prd_ids: list[UUID]) -> di
     rows = await _fetch_all(
         conn,
         """
-        select * from idea_ws.prd_versions
+        select * from scratch_prd.prd_versions
         where user_id = %s and prd_document_id = any(%s)
         order by version_number desc
         """,
@@ -383,7 +387,7 @@ async def _with_versions(conn: Conn, user_id: UUID, rows: list[dict[str, Any]]) 
 async def list_prds(conn: Conn, user_id: UUID, project_id: UUID) -> list[PrdDocument]:
     rows = await _fetch_all(
         conn,
-        "select * from idea_ws.prd_documents where user_id = %s and project_id = %s order by updated_at desc, id",
+        "select * from scratch_prd.prd_documents where user_id = %s and project_id = %s order by updated_at desc, id",
         (user_id, project_id),
     )
     return await _with_versions(conn, user_id, rows)
@@ -391,7 +395,7 @@ async def list_prds(conn: Conn, user_id: UUID, project_id: UUID) -> list[PrdDocu
 
 async def get_prd(conn: Conn, user_id: UUID, prd_id: UUID) -> PrdDocument:
     row = await _fetch_one(
-        conn, "select * from idea_ws.prd_documents where id = %s and user_id = %s", (prd_id, user_id)
+        conn, "select * from scratch_prd.prd_documents where id = %s and user_id = %s", (prd_id, user_id)
     )
     if row is None:
         raise NotFoundError
@@ -405,13 +409,13 @@ async def create_prd(conn: Conn, user_id: UUID, project_id: UUID, body: PrdSave)
         conn,
         "prds",
         config.MAX_PRDS_PER_PROJECT,
-        "select count(*) from idea_ws.prd_documents where user_id = %s and project_id = %s",
+        "select count(*) from scratch_prd.prd_documents where user_id = %s and project_id = %s",
         (user_id, project_id),
     )
     row = await _fetch_one(
         conn,
         """
-        insert into idea_ws.prd_documents
+        insert into scratch_prd.prd_documents
           (user_id, project_id, title, content, generation_mode, detail_level, source_note_ids,
            facts, proposals, open_questions, contradictions)
         values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -427,13 +431,13 @@ async def save_prd_version(conn: Conn, user_id: UUID, prd_id: UUID, body: PrdSav
     """現在の内容を prd_versions に積んでから更新し、版番号を 1 上げる"""
     async with conn.transaction():
         current = await _fetch_one(
-            conn, "select * from idea_ws.prd_documents where id = %s and user_id = %s for update", (prd_id, user_id)
+            conn, "select * from scratch_prd.prd_documents where id = %s and user_id = %s for update", (prd_id, user_id)
         )
         if current is None:
             raise NotFoundError
         await conn.execute(
             """
-            insert into idea_ws.prd_versions
+            insert into scratch_prd.prd_versions
               (user_id, prd_document_id, version_number, title, content, generation_mode, detail_level,
                source_note_ids, facts, proposals, open_questions, contradictions, summary, created_at)
             values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -457,7 +461,7 @@ async def save_prd_version(conn: Conn, user_id: UUID, prd_id: UUID, body: PrdSav
         )
         await conn.execute(
             """
-            update idea_ws.prd_documents
+            update scratch_prd.prd_documents
             set title = %s, content = %s, generation_mode = %s, detail_level = %s, source_note_ids = %s,
                 facts = %s, proposals = %s, open_questions = %s, contradictions = %s, version = version + 1
             where id = %s and user_id = %s
@@ -467,9 +471,9 @@ async def save_prd_version(conn: Conn, user_id: UUID, prd_id: UUID, body: PrdSav
         # 履歴が上限を超えたら古い版から削除する
         await conn.execute(
             """
-            delete from idea_ws.prd_versions
+            delete from scratch_prd.prd_versions
             where user_id = %s and prd_document_id = %s and id not in (
-              select id from idea_ws.prd_versions
+              select id from scratch_prd.prd_versions
               where user_id = %s and prd_document_id = %s
               order by version_number desc limit %s
             )
@@ -500,7 +504,7 @@ def default_preferences(user_id: UUID, project_id: UUID) -> WorkspacePreferences
 async def get_preferences(conn: Conn, user_id: UUID, project_id: UUID) -> WorkspacePreferences:
     row = await _fetch_one(
         conn,
-        "select * from idea_ws.workspace_preferences where user_id = %s and project_id = %s",
+        "select * from scratch_prd.workspace_preferences where user_id = %s and project_id = %s",
         (user_id, project_id),
     )
     return WorkspacePreferences.model_validate(row) if row else default_preferences(user_id, project_id)
@@ -512,7 +516,7 @@ async def save_preferences(conn: Conn, user_id: UUID, project_id: UUID, body: Pr
     row = await _fetch_one(
         conn,
         """
-        insert into idea_ws.workspace_preferences (user_id, project_id, pane_count, panes, active_pane_id)
+        insert into scratch_prd.workspace_preferences (user_id, project_id, pane_count, panes, active_pane_id)
         values (%s, %s, %s, %s, %s)
         on conflict (user_id, project_id) do update
           set pane_count = excluded.pane_count, panes = excluded.panes, active_pane_id = excluded.active_pane_id
