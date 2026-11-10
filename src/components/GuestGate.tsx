@@ -1,11 +1,10 @@
-import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { Loader2, ShieldCheck, AlertCircle, RotateCw } from 'lucide-react';
-import { APP_NAME, SESSION_EXPIRED_EVENT, TURNSTILE_SITE_KEY } from '../config/app';
+import { APP_NAME, SESSION_EXPIRED_EVENT } from '../config/app';
 import type { SessionUser } from '../config/api';
 import { createGuest, fetchCurrentUser } from '../services/session';
-import { loadTurnstile } from '../services/turnstile';
 
-type GateStatus = 'checking' | 'verifying' | 'ready' | 'error';
+type GateStatus = 'checking' | 'creating' | 'ready' | 'error';
 
 interface SessionContextValue {
   user: SessionUser;
@@ -23,15 +22,14 @@ export const useSession = (): SessionContextValue => {
 };
 
 /**
- * セッションが無ければ Turnstile の確認を経てゲストを作り、セッションができてから子を表示する。
- * 利用中にセッションが切れたら（API が 401）、画面を残したまま確認を重ねて表示する。
+ * セッションが無ければゲストを作り、セッションができてから子を表示する。
+ * 利用中にセッションが切れたら（API が 401）、画面を残したまま再開の表示を重ねる。
  */
 export const GuestGate: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [status, setStatus] = useState<GateStatus>('checking');
   const [error, setError] = useState<string | null>(null);
   const [hasEnteredApp, setHasEnteredApp] = useState(false);
   const [user, setUser] = useState<SessionUser | null>(null);
-  const widgetContainer = useRef<HTMLDivElement>(null);
 
   const enterApp = (sessionUser: SessionUser) => {
     setUser(sessionUser);
@@ -48,46 +46,27 @@ export const GuestGate: React.FC<{ children: React.ReactNode }> = ({ children })
     setStatus('checking');
     setError(null);
     fetchCurrentUser()
-      .then((current) => (current ? enterApp(current) : setStatus('verifying')))
+      .then((current) => (current ? enterApp(current) : setStatus('creating')))
       .catch(() => fail('サーバーに接続できませんでした。時間をおいて再読み込みしてください。'));
   }, []);
 
   useEffect(checkSession, [checkSession]);
 
   useEffect(() => {
-    const onExpired = () => setStatus('verifying');
+    const onExpired = () => setStatus('creating');
     window.addEventListener(SESSION_EXPIRED_EVENT, onExpired);
     return () => window.removeEventListener(SESSION_EXPIRED_EVENT, onExpired);
   }, []);
 
-  // Turnstile を表示し、トークンを受け取ったらゲストを作る
+  // セッションが無ければゲストを作る
   useEffect(() => {
-    if (status !== 'verifying') return;
-    if (!TURNSTILE_SITE_KEY) {
-      fail('VITE_TURNSTILE_SITE_KEY が設定されていません。');
-      return;
-    }
-
-    let widgetId: string | null = null;
+    if (status !== 'creating') return;
     let cancelled = false;
-    loadTurnstile()
-      .then((turnstile) => {
-        if (cancelled || !widgetContainer.current) return;
-        widgetId = turnstile.render(widgetContainer.current, {
-          sitekey: TURNSTILE_SITE_KEY,
-          callback: (token) => {
-            createGuest(token)
-              .then(enterApp)
-              .catch((e: Error) => fail(e.message));
-          },
-          'error-callback': () => fail('ボット対策の確認に失敗しました。再読み込みしてお試しください。'),
-        });
-      })
-      .catch((e: Error) => fail(e.message));
-
+    createGuest()
+      .then((created) => !cancelled && enterApp(created))
+      .catch((e: Error) => !cancelled && fail(e.message));
     return () => {
       cancelled = true;
-      if (widgetId) window.turnstile?.remove(widgetId);
     };
   }, [status]);
 
@@ -105,12 +84,13 @@ export const GuestGate: React.FC<{ children: React.ReactNode }> = ({ children })
           {hasEnteredApp ? 'セッションを再開します' : `${APP_NAME} を準備しています`}
         </h1>
         <p className="text-xs text-zinc-500 dark:text-zinc-400">
-          {status === 'checking' ? '接続を確認しています…' : 'ボットでないことを確認しています。'}
+          {status === 'checking' ? '接続を確認しています…' : 'ゲストとして始める準備をしています…'}
         </p>
       </div>
 
-      {status === 'checking' && <Loader2 className="mx-auto w-5 h-5 animate-spin text-indigo-500" />}
-      {status === 'verifying' && <div ref={widgetContainer} className="flex justify-center min-h-16" />}
+      {(status === 'checking' || status === 'creating') && (
+        <Loader2 className="mx-auto w-5 h-5 animate-spin text-indigo-500" />
+      )}
       {status === 'error' && (
         <div className="space-y-3">
           <div className="p-2.5 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900 text-xs text-rose-700 dark:text-rose-300 flex items-center gap-2 text-left">

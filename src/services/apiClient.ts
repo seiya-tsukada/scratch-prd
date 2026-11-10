@@ -28,7 +28,6 @@ const STATUS_MESSAGES: Record<number, string> = {
 
 const CODE_MESSAGES: Record<string, string> = {
   invalid_origin: 'このページからのリクエストを受け付けられませんでした。ページを再読み込みしてください。',
-  turnstile_failed: 'ボット対策の確認に失敗しました。もう一度お試しください。',
   rate_limited: '短時間にリクエストが集中しています。しばらく待ってからお試しください。',
   limit_exceeded: '保存できる件数の上限に達しました。不要なデータを削除してからお試しください。',
   conflict: '他の画面で先に更新されていました。',

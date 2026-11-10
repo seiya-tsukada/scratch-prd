@@ -18,7 +18,7 @@ def test_security_headers(client: TestClient) -> None:
     csp = response.headers["content-security-policy"]
     assert "default-src 'self'" in csp
     assert "frame-ancestors 'none'" in csp
-    assert "https://challenges.cloudflare.com" in csp  # Turnstile
+    assert "https://" not in csp  # 外部のスクリプト・フレームを読み込まない
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["x-frame-options"] == "DENY"
     assert "strict-transport-security" not in response.headers  # ローカル（http）では付けない
@@ -65,7 +65,6 @@ PRODUCTION_ENV = {
     "VERCEL_ENV": "production",
     "DATABASE_URL": "postgresql://postgres.abcdef:secret@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres",
     "SESSION_TOKEN_PEPPER": "p" * config.MIN_PRODUCTION_SECRET_CHARS,
-    "TURNSTILE_SECRET_KEY": "0x4AAAAAAAproductionsecret",
     "COOKIE_SECURE": "true",
     "TRUST_PROXY_HEADERS": "true",
     "CRON_SECRET": "c" * 16,
@@ -86,8 +85,6 @@ def test_production_settings_are_accepted(monkeypatch: pytest.MonkeyPatch) -> No
         ("DATABASE_URL", "postgresql://idea_ws_app:idea_ws_app@localhost:54322/postgres"),
         ("DATABASE_URL", "postgresql://idea_ws_app:idea_ws_app@db:5432/postgres"),
         ("SESSION_TOKEN_PEPPER", "local-dev-pepper-change-me"),
-        ("TURNSTILE_SECRET_KEY", "1x0000000000000000000000000000000AA"),
-        ("TURNSTILE_SECRET_KEY", ""),
         ("COOKIE_SECURE", "false"),
         ("TRUST_PROXY_HEADERS", "false"),
         ("CRON_SECRET", ""),

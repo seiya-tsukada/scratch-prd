@@ -35,10 +35,6 @@ def display_name_or_none(value: str | None) -> str | None:
     return value or None
 
 
-class GuestRequest(CamelModel):
-    turnstile_token: str = Field(min_length=1, max_length=2048)
-
-
 class RegisterRequest(CamelModel):
     """今のゲストをメールアドレス + パスワードの正規ユーザーにする"""
 

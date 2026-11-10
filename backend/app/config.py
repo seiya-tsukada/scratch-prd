@@ -19,12 +19,6 @@ GEMINI_API_KEY_PLACEHOLDER = "MY_GEMINI_API_KEY"
 
 # 本番（VERCEL_ENV=production）で使ってはいけないローカル用の値
 LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1", "db", "db-test"}
-# Cloudflare Turnstile のテスト用秘密鍵は 1x / 2x / 3x + 0 の並び + AA
-TURNSTILE_TEST_SECRET_PREFIXES = (
-    "1x0000000000000000000000000000000",
-    "2x0000000000000000000000000000000",
-    "3x0000000000000000000000000000000",
-)
 MIN_PRODUCTION_SECRET_CHARS = 32
 # DATABASE_URL が未設定のときのローカル（docker compose の db）の接続先
 LOCAL_DATABASE_URL = "postgresql://idea_ws_app:idea_ws_app@localhost:54322/postgres"
@@ -44,7 +38,6 @@ class Settings(BaseSettings):
     session_token_pepper: SecretStr | None = None
     # 状態を変えるリクエストで許可する Origin（カンマ区切り）
     allowed_origins: str = "http://localhost:3000"
-    turnstile_secret_key: SecretStr | None = None
     # ローカル（http）では false にする。true なら Cookie 名に __Host- を付ける
     cookie_secure: bool = True
     # Vercel 上では true（x-forwarded-for を Vercel が上書きするため信頼できる）
@@ -87,9 +80,6 @@ class Settings(BaseSettings):
             problems.append("DATABASE_URL がローカルの DB を指しています")
         if len(self.pepper) < MIN_PRODUCTION_SECRET_CHARS:
             problems.append(f"SESSION_TOKEN_PEPPER は {MIN_PRODUCTION_SECRET_CHARS} 文字以上にしてください")
-        turnstile = self.turnstile_secret_key.get_secret_value() if self.turnstile_secret_key else ""
-        if not turnstile or turnstile.startswith(TURNSTILE_TEST_SECRET_PREFIXES):
-            problems.append("TURNSTILE_SECRET_KEY が未設定、またはテスト用の値です")
         if not self.cookie_secure:
             problems.append("COOKIE_SECURE は true にしてください")
         if not self.trust_proxy_headers:
@@ -193,9 +183,6 @@ LOGIN_RATE_LIMIT_PER_EMAIL = (5, 15 * 60)
 REGISTER_RATE_LIMIT_PER_IP = (5, 60 * 60)
 # 計測イベントの受信（セッションごと）
 EVENTS_RATE_LIMIT_PER_SESSION = (300, 60 * 60)
-
-TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
-TURNSTILE_TIMEOUT_SECONDS = 10
 
 # /api/health の DB 接続確認（select 1）で、プールから接続を借りるまで待つ秒数
 HEALTH_DB_TIMEOUT_SECONDS = 5

@@ -1,6 +1,5 @@
 import {
   API_ENDPOINTS,
-  GuestRequest,
   LoginRequest,
   MeResponse,
   RegisterRequest,
@@ -17,10 +16,9 @@ export async function fetchCurrentUser(): Promise<SessionUser | null> {
   return body.user;
 }
 
-/** Turnstile のトークンと引き換えにゲストを作る（既にセッションがあればそのユーザーが返る） */
-export async function createGuest(turnstileToken: string): Promise<SessionUser> {
-  const payload: GuestRequest = { turnstileToken };
-  const body = await requestJson<MeResponse>(API_ENDPOINTS.AUTH_GUEST, { method: 'POST', body: payload });
+/** ゲストを作る（既にセッションがあればそのユーザーが返る） */
+export async function createGuest(): Promise<SessionUser> {
+  const body = await requestJson<MeResponse>(API_ENDPOINTS.AUTH_GUEST, { method: 'POST' });
   return body.user;
 }
 

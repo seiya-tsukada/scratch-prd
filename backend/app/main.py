@@ -33,12 +33,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="Idea Workspace API", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
-# 画面は自分のオリジンと Cloudflare Turnstile だけを読み込む
+# 画面は自分のオリジンだけを読み込む
 CONTENT_SECURITY_POLICY = "; ".join(
     [
         "default-src 'self'",
-        "script-src 'self' https://challenges.cloudflare.com",
-        "frame-src https://challenges.cloudflare.com",
+        "script-src 'self'",
         "connect-src 'self'",
         "img-src 'self' data:",
         "style-src 'self' 'unsafe-inline'",
