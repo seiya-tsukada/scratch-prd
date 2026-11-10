@@ -37,12 +37,12 @@ Vercel の Project Settings → Environment Variables で、環境ごとに設�
 | `ALLOWED_ORIGINS` | 本番ドメイン（例 `https://idea-workspace.example.com`） | `http://localhost:3000` | 状態を変える API を許可する Origin（カンマ区切り）。Vercel のデプロイ URL（`VERCEL_URL` など）は自動で追加される |
 | `COOKIE_SECURE` | `true` | `false` | `true` で Cookie 名が `__Host-iws_session` になり HSTS を付ける |
 | `TRUST_PROXY_HEADERS` | `true` | `false` | `x-forwarded-for` を信頼する（Vercel が上書きするため） |
-| `CRON_SECRET` | 16 文字以上のランダム文字列 | 任意 | `GET /api/cron/cleanup` の認証 |
+| `CRON_SECRET` | 任意（現在は設定しない）。設定するなら 16 文字以上のランダム文字列 | 任意 | `GET /api/cron/cleanup` の認証。未設定の間は Cron がすべて 401 になり、使われていないゲスト・期限切れセッションの掃除が動かない |
 | `GEMINI_API_KEY` | 任意 | 任意 | 未設定なら内蔵ジェネレータで応答（`usedFallback: true`） |
 | `GEMINI_MODEL` | 任意（既定 `gemini-3.8-flash`） | 任意 | |
 
 > Production（Vercel が `VERCEL_ENV=production` を設定する）では、次のどれかに当てはまると API が起動しない（ローカル用の設定のまま本番に出さないため）。
-> `DATABASE_URL` が未設定かローカル（localhost / db）・`COOKIE_SECURE` / `TRUST_PROXY_HEADERS` が `true` でない・`CRON_SECRET` が 16 文字未満。
+> `DATABASE_URL` が未設定かローカル（localhost / db）・`COOKIE_SECURE` / `TRUST_PROXY_HEADERS` が `true` でない・`CRON_SECRET` が設定されていて 16 文字未満。
 
 ランダムな値の作り方:
 

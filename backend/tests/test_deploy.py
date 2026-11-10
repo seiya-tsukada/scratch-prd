@@ -77,6 +77,14 @@ def test_production_settings_are_accepted(monkeypatch: pytest.MonkeyPatch) -> No
     assert settings.vercel_env == "production"
 
 
+def test_production_settings_are_accepted_without_cron_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CRON_SECRET は任意（未設定の間は Cron のエンドポイントがすべて 401 になる）"""
+    for name, value in PRODUCTION_ENV.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("CRON_SECRET", "")
+    assert not config.Settings().cron_secret
+
+
 @pytest.mark.parametrize(
     ("name", "value"),
     [
@@ -85,7 +93,7 @@ def test_production_settings_are_accepted(monkeypatch: pytest.MonkeyPatch) -> No
         ("DATABASE_URL", "postgresql://idea_ws_app:idea_ws_app@db:5432/postgres"),
         ("COOKIE_SECURE", "false"),
         ("TRUST_PROXY_HEADERS", "false"),
-        ("CRON_SECRET", ""),
+        ("CRON_SECRET", "short"),
     ],
 )
 def test_local_settings_are_rejected_in_production(monkeypatch: pytest.MonkeyPatch, name: str, value: str) -> None:

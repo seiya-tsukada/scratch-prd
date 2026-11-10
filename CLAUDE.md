@@ -160,7 +160,7 @@ uv run ruff check backend api && uv run ruff format --check backend api && uv ru
 
 アカウント（Phase 5〜）:
 
-- 登録・ログイン・統合は `backend/app/services/accounts.py`、アカウント設定は `routers/account.py`、定期処理は `routers/cron.py`（`CRON_SECRET`）。
+- 登録・ログイン・統合は `backend/app/services/accounts.py`、アカウント設定は `routers/account.py`、定期処理は `routers/cron.py`（`CRON_SECRET`。任意で、未設定の間は 401 を返して何もしない）。
 - ログイン系は `rate_limit.enforce_rate_limit`（IP・メールアドレスごと、キーはハッシュ）を通す。失敗の文言でメールアドレスの有無を区別しない。
 - フロントのログイン中ユーザーは `useSession()`（`GuestGate` の context）。別ユーザーに切り替わったときはページを読み直す。
 

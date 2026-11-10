@@ -39,7 +39,8 @@ class Settings(BaseSettings):
     cookie_secure: bool = True
     # Vercel 上では true（x-forwarded-for を Vercel が上書きするため信頼できる）
     trust_proxy_headers: bool = False
-    # Vercel Cron が Authorization: Bearer で送る秘密（16 文字以上のランダム文字列）
+    # Vercel Cron が Authorization: Bearer で送る秘密（16 文字以上のランダム文字列）。
+    # 任意: 未設定の間は /api/cron/* がすべて 401 になり、定期処理は動かない
     cron_secret: SecretStr | None = None
     # Vercel が自動で設定するシステム環境変数（ドメインのみ、https:// なし）。プレビューの URL は毎回変わるため、
     # このデプロイ自身の URL を許可する Origin に自動で加える
@@ -67,8 +68,8 @@ class Settings(BaseSettings):
             problems.append("COOKIE_SECURE は true にしてください")
         if not self.trust_proxy_headers:
             problems.append("TRUST_PROXY_HEADERS は true にしてください")
-        if not self.cron_secret or len(self.cron_secret.get_secret_value()) < 16:
-            problems.append("CRON_SECRET を 16 文字以上で設定してください")
+        if self.cron_secret and len(self.cron_secret.get_secret_value()) < 16:
+            problems.append("CRON_SECRET は 16 文字以上にしてください（使わないなら未設定にする）")
         if problems:
             raise ValueError("本番環境の設定に問題があります: " + " / ".join(problems))
         return self

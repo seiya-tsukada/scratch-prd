@@ -360,6 +360,13 @@ def test_cron_requires_secret(client: TestClient) -> None:
     assert client.get("/api/cron/cleanup", headers={"Authorization": "Bearer wrong"}).status_code == 401
 
 
+def test_cron_rejects_everything_without_configured_secret(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("CRON_SECRET", "")
+    config.get_settings.cache_clear()
+    assert client.get("/api/cron/cleanup").status_code == 401
+    assert client.get("/api/cron/cleanup", headers={"Authorization": "Bearer "}).status_code == 401
+
+
 def test_cron_cleans_up(
     client: TestClient, db_admin: psycopg.Connection[Any], make_client: Callable[[], TestClient]
 ) -> None:
