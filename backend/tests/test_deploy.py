@@ -64,7 +64,6 @@ def test_vercel_entrypoint_exposes_app() -> None:
 PRODUCTION_ENV = {
     "VERCEL_ENV": "production",
     "DATABASE_URL": "postgresql://postgres.abcdef:secret@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres",
-    "SESSION_TOKEN_PEPPER": "p" * config.MIN_PRODUCTION_SECRET_CHARS,
     "COOKIE_SECURE": "true",
     "TRUST_PROXY_HEADERS": "true",
     "CRON_SECRET": "c" * 16,
@@ -84,7 +83,6 @@ def test_production_settings_are_accepted(monkeypatch: pytest.MonkeyPatch) -> No
         ("DATABASE_URL", ""),
         ("DATABASE_URL", "postgresql://idea_ws_app:idea_ws_app@localhost:54322/postgres"),
         ("DATABASE_URL", "postgresql://idea_ws_app:idea_ws_app@db:5432/postgres"),
-        ("SESSION_TOKEN_PEPPER", "local-dev-pepper-change-me"),
         ("COOKIE_SECURE", "false"),
         ("TRUST_PROXY_HEADERS", "false"),
         ("CRON_SECRET", ""),

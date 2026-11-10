@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import hmac
 import secrets
 from datetime import timedelta
 
@@ -18,19 +17,20 @@ def new_token() -> str:
     return secrets.token_urlsafe(32)
 
 
-def _hmac(purpose: str, value: str) -> bytes:
-    pepper = config.get_settings().pepper
-    return hmac.new(pepper.encode(), f"{purpose}:{value}".encode(), hashlib.sha256).digest()
+def _hash(purpose: str, value: str) -> bytes:
+    """用途ごとに区別した SHA-256。トークンは十分に長い乱数なので元に戻せないが、
+    IP は DB が漏れると総当たりで戻せる（鍵付きの HMAC にするかは秘匿情報の扱いを決めてから見直す）"""
+    return hashlib.sha256(f"{purpose}:{value}".encode()).digest()
 
 
 def hash_token(token: str) -> bytes:
     """セッション・ログイン用トークンの保存形式。平文は DB に保存しない"""
-    return _hmac("token", token)
+    return _hash("token", token)
 
 
 def hash_ip(ip: str) -> bytes:
     """IP アドレスの保存・レート制限キー用。生の IP は保存しない"""
-    return _hmac("ip", ip)
+    return _hash("ip", ip)
 
 
 def client_ip(request: Request) -> str | None:

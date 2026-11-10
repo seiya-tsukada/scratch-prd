@@ -34,7 +34,6 @@ Vercel の Project Settings → Environment Variables で、環境ごとに設�
 |---|---|---|---|
 | `DATABASE_URL` | Supabase の Connect 画面の Transaction pooler の接続文字列（ユーザー `postgres.<project-ref>`） | `postgresql://idea_ws_app:idea_ws_app@localhost:54322/postgres` | バックエンドの接続先（[supabase-setup.md](supabase-setup.md) §4） |
 | `DATABASE_URL_DIRECT` | **設定しない** | ローカルの直接接続 | マイグレーション・メンテナンス SQL 専用（手元から psql で流すときだけ使う） |
-| `SESSION_TOKEN_PEPPER` | 32 文字以上のランダムな文字列 | `.env.example` の値 | トークン・IP の HMAC 鍵。変えると全セッションが無効になる |
 | `ALLOWED_ORIGINS` | 本番ドメイン（例 `https://idea-workspace.example.com`） | `http://localhost:3000` | 状態を変える API を許可する Origin（カンマ区切り）。Vercel のデプロイ URL（`VERCEL_URL` など）は自動で追加される |
 | `COOKIE_SECURE` | `true` | `false` | `true` で Cookie 名が `__Host-iws_session` になり HSTS を付ける |
 | `TRUST_PROXY_HEADERS` | `true` | `false` | `x-forwarded-for` を信頼する（Vercel が上書きするため） |
@@ -43,7 +42,7 @@ Vercel の Project Settings → Environment Variables で、環境ごとに設�
 | `GEMINI_MODEL` | 任意（既定 `gemini-3.8-flash`） | 任意 | |
 
 > Production（Vercel が `VERCEL_ENV=production` を設定する）では、次のどれかに当てはまると API が起動しない（ローカル用の設定のまま本番に出さないため）。
-> `DATABASE_URL` が未設定かローカル（localhost / db）・`SESSION_TOKEN_PEPPER` が 32 文字未満・`COOKIE_SECURE` / `TRUST_PROXY_HEADERS` が `true` でない・`CRON_SECRET` が 16 文字未満。
+> `DATABASE_URL` が未設定かローカル（localhost / db）・`COOKIE_SECURE` / `TRUST_PROXY_HEADERS` が `true` でない・`CRON_SECRET` が 16 文字未満。
 
 ランダムな値の作り方:
 
