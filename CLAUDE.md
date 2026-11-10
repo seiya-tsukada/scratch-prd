@@ -62,7 +62,7 @@ Vercel（同一リポジトリ・同一ドメイン）
 - **Supabase のキー（anon / service_role / publishable / secret）や DB 接続文字列をフロントに渡さない。** `VITE_` 接頭辞の環境変数に秘密情報を入れない。
 - **`public` スキーマにテーブル・関数・ビューを作らない。** すべて `scratch_prd` に作る。
 - **`scratch_prd` を Supabase Data API（PostgREST）の Exposed schemas に追加しない。**
-- **RLS を無効化しない。** `scratch_prd` の全テーブルで RLS を有効にし、ポリシーはアプリ用ロール `idea_ws_app` 向けだけを作る（`anon` / `authenticated` / `service_role` 向けは作らない）。
+- **RLS を無効化しない。** `scratch_prd` の全テーブルで RLS を有効にし、ポリシーはアプリ用ロール `idea_ws_app` 向けだけを作る（`anon` / `authenticated` / `service_role` 向けは作らない）。本番のバックエンドは `postgres.<project-ref>`（テーブルの所有者）で接続するため RLS は効かない。RLS と REVOKE はバックエンド以外の経路（Data API など）を塞ぐためのもので、認可は `user_id` 条件で守る。
 - **ユーザー配下データのクエリで `user_id` 条件を省略しない。** 他人のリソース ID を指定されたら 404 を返す（403 で存在を漏らさない）。
 - セッショントークン・ログイントークンを平文で DB に保存しない（HMAC ハッシュのみ）。IP アドレスを生で保存しない。
 - JWT をセッションに使わない。`localStorage` に認証情報を置かない。
@@ -155,7 +155,7 @@ uv run ruff check backend api && uv run ruff format --check backend api && uv ru
 - マイグレーションは**冪等**に書く（`if not exists` / `create or replace` / `pg_constraint` などを見る `do` ブロック）。ファイル名に日付を入れず、名前順で後ろに来る名前にする。`backend/tests/db/test_migrations.py` が 2 回適用でスキーマとデータが変わらないことを検証する。
 - 手動の運用作業は `supabase/maintenance/*.sql`（psql で実行）。データを消すものは `-v confirm=yes` が無ければ何もせず止める。
 - `GET /api/health` は DB に `select 1` を投げて接続を確認する（失敗時 503。モックでは `db: skipped`）。
-- ローカルの `idea_ws_app` のパスワードは `idea_ws_app`（`db_reset` が設定する。本番では手作業で設定）。
+- ローカルの `idea_ws_app` のパスワードは `idea_ws_app`（`db_reset` が設定する）。本番の `DATABASE_URL` は Supabase の Connect 画面の Transaction pooler の文字列（`postgres.<project-ref>`）をそのまま使い、`idea_ws_app` はログイン不可のまま。
 - テーブルを追加するときは、同じマイグレーションで RLS 有効化・`idea_ws_app` への GRANT・`idea_ws_app` 用ポリシーを行う。
 
 アカウント（Phase 5〜）:

@@ -32,35 +32,24 @@ cat supabase/migrations/*.sql supabase/seed.sql | psql "$DATABASE_URL_DIRECT" -v
 - [ ] `psql "$DATABASE_URL_DIRECT" -f supabase/maintenance/row_counts.sql` でテーブルができていることを確認する
 - [ ] 直接接続が IPv6 のみで繋がらない場合は、Connect 画面の Session pooler（ポート 5432）の接続文字列を使う
 
-## 4. アプリ用ロール `idea_ws_app` のパスワード設定
-
-マイグレーションは `idea_ws_app` を**ログイン不可**で作る（パスワードを git に入れないため）。本番では SQL Editor で次を実行する。
-
-```sql
-alter role idea_ws_app with login password '<十分に長いランダム文字列>';
-```
-
-- [ ] 上記を実行し、パスワードをパスワードマネージャーに保存する
-- [ ] `idea_ws_app` が BYPASSRLS / superuser を持たないことを確認する:
-      `select rolsuper, rolbypassrls from pg_roles where rolname = 'idea_ws_app';` → `f, f`
-
-## 5. 接続文字列（Phase 3 以降でバックエンドが使う）
+## 4. 接続文字列（バックエンドが使う）
 
 | 用途 | 環境変数 | 接続先 | ユーザー |
 |---|---|---|---|
-| バックエンド（Vercel Function） | `DATABASE_URL` | **Transaction pooler**（Supavisor, ポート 6543） | `idea_ws_app.<project-ref>` |
+| バックエンド（Vercel Function） | `DATABASE_URL` | **Transaction pooler**（Supavisor, ポート 6543） | `postgres.<project-ref>` |
 | マイグレーション | `DATABASE_URL_DIRECT` | Direct connection（ポート 5432） | `postgres` |
 
+Project の **Connect → Transaction pooler** に出てくる接続文字列を、`[YOUR-PASSWORD]` を 1. のパスワードに置き換えてそのまま `DATABASE_URL` に設定する。
+
 ```
-DATABASE_URL=postgresql://idea_ws_app.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
+DATABASE_URL=postgresql://postgres.<project-ref>:<password>@aws-0-<region>.pooler.supabase.com:6543/postgres
 ```
 
-- [ ] Connect 画面の Transaction pooler の文字列を基に、ユーザー名を `idea_ws_app.<project-ref>` に置き換えた `DATABASE_URL` を作る
-- [ ] 次の確認クエリが動くこと（`idea_ws_app` でプーラー経由に接続できること）を確かめる:
+- [ ] Connect 画面の Transaction pooler の文字列で `DATABASE_URL` を作る（パスワードに記号があれば URL エンコードする）
+- [ ] 次の確認クエリが動くことを確かめる:
 
 ```bash
 psql "$DATABASE_URL" -c "select count(*) from scratch_prd.sample_contents"     # → 1
-psql "$DATABASE_URL" -c "select current_setting('search_path')"            # → scratch_prd, extensions
 ```
 
 - [ ] anon からは読めないことを確認する（SQL Editor で実行）:
@@ -71,17 +60,21 @@ select * from scratch_prd.users;   -- permission denied for schema scratch_prd �
 reset role;
 ```
 
+> バックエンドは `postgres` ロール（テーブルの所有者）で接続するため、本番では RLS のポリシーは効かない。認可はバックエンドの `user_id` 条件で守る。
+> RLS と anon / authenticated からの REVOKE は、Data API など**バックエンド以外の経路**からデータを守るために残している。
+> アプリ用ロール `idea_ws_app` はローカル・テストの接続にだけ使う（本番ではログイン不可のまま。パスワード設定は不要）。
+
 > Transaction pooler ではプリペアドステートメントが使えない。psycopg では `prepare_threshold=None` を指定する（Phase 3 の接続管理で対応）。
 > 参考: <https://supabase.com/docs/guides/troubleshooting/disabling-prepared-statements-qL8lEL>
 
-## 6. コンテンツの更新（デプロイ不要）
+## 5. コンテンツの更新（デプロイ不要）
 
-サンプルは SQL Editor（`postgres` ロール）で更新する。`idea_ws_app` には読み取り権限しかない。
+サンプルは SQL Editor（`postgres` ロール）で更新する。
 
 - サンプル: 新しい `version` の行を `is_active = false` で追加 → 既存の有効行を `false` にしてから新しい行を `true` にする（有効な行は 1 件まで）
 - `sample_contents.content` の形式は `supabase/seed.sql` 先頭のコメントを参照
 
-## 7. 運用メモ
+## 6. 運用メモ
 
 - マイグレーションは**冪等**に書く（`create table if not exists`、`create index if not exists`、`create or replace function / view / trigger`、`pg_constraint` などを見る `do` ブロック）。既存の DB にもう一度流しても壊れないこと（`backend/tests/db/test_migrations.py` が 2 回適用を検証する）
 - ファイル名に日付を入れない（例 `init.sql`）。名前順に流すので、新しいファイルは既存のファイルより後ろに来る名前にする

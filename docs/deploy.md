@@ -63,7 +63,7 @@ Vercel の Project Settings → Environment Variables で、環境ごとに設�
 
 | 変数 | Production | Development（`.env`） | 説明 |
 |---|---|---|---|
-| `DATABASE_URL` | 本番 DB の Transaction pooler（ユーザー `idea_ws_app.<project-ref>`） | `postgresql://idea_ws_app:idea_ws_app@localhost:54322/postgres` | バックエンドの接続先（[supabase-setup.md](supabase-setup.md) §5） |
+| `DATABASE_URL` | Supabase の Connect 画面の Transaction pooler の接続文字列（ユーザー `postgres.<project-ref>`） | `postgresql://idea_ws_app:idea_ws_app@localhost:54322/postgres` | バックエンドの接続先（[supabase-setup.md](supabase-setup.md) §4） |
 | `DATABASE_URL_DIRECT` | **設定しない** | ローカルの直接接続 | マイグレーション・メンテナンス SQL 専用（手元から psql で流すときだけ使う） |
 | `SESSION_TOKEN_PEPPER` | 32 文字以上のランダムな文字列 | `.env.example` の値 | トークン・IP の HMAC 鍵。変えると全セッションが無効になる |
 | `ALLOWED_ORIGINS` | 本番ドメイン（例 `https://idea-workspace.example.com`） | `http://localhost:3000` | 状態を変える API を許可する Origin（カンマ区切り）。Vercel のデプロイ URL（`VERCEL_URL` など）は自動で追加される |
@@ -91,8 +91,8 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 ## 初回セットアップ チェックリスト
 
 ### Supabase（本番の 1 プロジェクト）
-- [ ] [supabase-setup.md](supabase-setup.md) の手順を行う（マイグレーション・seed・`idea_ws_app` のパスワード・Data API に `scratch_prd` を出さない）
-- [ ] `DATABASE_URL`（Transaction pooler、ユーザー `idea_ws_app.<project-ref>`）を控える
+- [ ] [supabase-setup.md](supabase-setup.md) の手順を行う（マイグレーション・seed・Data API に `scratch_prd` を出さない）
+- [ ] `DATABASE_URL`（Connect 画面の Transaction pooler の接続文字列、ユーザー `postgres.<project-ref>`）を控える
 
 ### Cloudflare Turnstile
 - [ ] ウィジェットを作成し、サイトキーと秘密鍵を控える
