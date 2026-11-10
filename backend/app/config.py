@@ -36,7 +36,8 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
     gemini_model: str = "gemini-3.8-flash"
 
-    # バックエンドの DB 接続（本番は Supavisor の transaction pooler、ユーザーは idea_ws_app）。
+    # バックエンドの DB 接続（本番は Supabase の Connect 画面の transaction pooler の文字列をそのまま使う。
+    # ユーザーは postgres.<project-ref>。ローカルは idea_ws_app）。
     # 未設定ならローカルでは LOCAL_DATABASE_URL、Vercel 上ではモック（use_mock）になる
     database_url: str | None = None
     # セッショントークン・IP をハッシュ化する HMAC の鍵。DB を使うときは必須（モックでは使わない）
