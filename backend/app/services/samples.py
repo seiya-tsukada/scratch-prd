@@ -1,4 +1,4 @@
-"""新規ゲストに有効なサンプル（idea_ws.sample_contents）を複製する。
+"""新規ゲストに有効なサンプル（scratch_prd.sample_contents）を複製する。
 サンプル内の key 参照は uuid に振り直す。形式は supabase/seed.sql 先頭のコメントを参照
 （古い形式の sections / notes[].sectionKey は無視する）"""
 
@@ -21,7 +21,7 @@ async def _insert_returning_id(conn: Conn, sql: str, params: tuple[Any, ...]) ->
 
 async def copy_active_sample(conn: Conn, user_id: UUID) -> UUID | None:
     """呼び出し側のトランザクション内で実行すること。作成したプロジェクトの ID を返す（サンプルが無ければ None）"""
-    cur = await conn.execute("select content from idea_ws.sample_contents where is_active")
+    cur = await conn.execute("select content from scratch_prd.sample_contents where is_active")
     row = await cur.fetchone()
     if row is None:
         return None
@@ -30,7 +30,7 @@ async def copy_active_sample(conn: Conn, user_id: UUID) -> UUID | None:
     project = sample["project"]
     project_id = await _insert_returning_id(
         conn,
-        "insert into idea_ws.projects (user_id, name, description) values (%s, %s, %s) returning id",
+        "insert into scratch_prd.projects (user_id, name, description) values (%s, %s, %s) returning id",
         (user_id, project["name"], project.get("description", "")),
     )
 
@@ -39,7 +39,7 @@ async def copy_active_sample(conn: Conn, user_id: UUID) -> UUID | None:
         note_ids[n["key"]] = await _insert_returning_id(
             conn,
             """
-            insert into idea_ws.notes
+            insert into scratch_prd.notes
               (user_id, project_id, title, content, position, created_at, updated_at)
             values (%s, %s, %s, %s, %s, now() - make_interval(hours => %s), now() - make_interval(hours => %s))
             returning id
@@ -58,7 +58,7 @@ async def copy_active_sample(conn: Conn, user_id: UUID) -> UUID | None:
     for p in sample.get("prds", []):
         await conn.execute(
             """
-            insert into idea_ws.prd_documents
+            insert into scratch_prd.prd_documents
               (user_id, project_id, title, content, generation_mode, detail_level, source_note_ids,
                facts, proposals, open_questions, contradictions, version, created_at, updated_at)
             values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
@@ -90,7 +90,7 @@ async def copy_active_sample(conn: Conn, user_id: UUID) -> UUID | None:
         ]
         await conn.execute(
             """
-            insert into idea_ws.workspace_preferences (user_id, project_id, pane_count, panes, active_pane_id)
+            insert into scratch_prd.workspace_preferences (user_id, project_id, pane_count, panes, active_pane_id)
             values (%s, %s, %s, %s, %s)
             """,
             (user_id, project_id, prefs["paneCount"], Jsonb(panes), prefs["activePaneId"]),

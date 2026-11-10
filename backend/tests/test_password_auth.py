@@ -73,12 +73,14 @@ def test_register_promotes_same_user_and_keeps_data(
 
     row = db_admin.execute(
         "select u.is_guest, u.email::text, i.provider, i.provider_subject, pc.password_hash like '$argon2id$%%' "
-        "from idea_ws.users u join idea_ws.user_identities i on i.user_id = u.id "
-        "join idea_ws.password_credentials pc on pc.user_id = u.id where u.id = %s",
+        "from scratch_prd.users u join scratch_prd.user_identities i on i.user_id = u.id "
+        "join scratch_prd.password_credentials pc on pc.user_id = u.id where u.id = %s",
         (guest_id,),
     ).fetchone()
     assert row == (False, "alice@example.com", "password", "alice@example.com", True)
-    assert PASSWORD not in str(db_admin.execute("select password_hash from idea_ws.password_credentials").fetchall())
+    assert PASSWORD not in str(
+        db_admin.execute("select password_hash from scratch_prd.password_credentials").fetchall()
+    )
 
 
 def test_registered_session_uses_registered_ttl(registered: TestClient) -> None:
@@ -194,7 +196,7 @@ def test_login_merge_moves_guest_data_into_account(
     login_guest(other)
     add_note(other, "別ブラウザのゲストのメモ")
     guest_id = other.get("/api/auth/me").json()["user"]["id"]
-    db_admin.execute("insert into idea_ws.events (user_id, event_name) values (%s, 'guest_created')", (guest_id,))
+    db_admin.execute("insert into scratch_prd.events (user_id, event_name) values (%s, 'guest_created')", (guest_id,))
     owner_id = registered.get("/api/auth/me").json()["user"]["id"]
 
     response = login(other, guestData="merge")
@@ -206,8 +208,8 @@ def test_login_merge_moves_guest_data_into_account(
     contents = [n["content"] for p in projects for n in other.get(f"/api/projects/{p['id']}/data").json()["notes"]]
     assert "alice のメモ" in contents and "別ブラウザのゲストのメモ" in contents
     # ゲストは消え、計測データは引き継がれる
-    assert db_admin.execute("select count(*) from idea_ws.users where id = %s", (guest_id,)).fetchone() == (0,)
-    assert db_admin.execute("select user_id::text from idea_ws.events").fetchone() == (owner_id,)
+    assert db_admin.execute("select count(*) from scratch_prd.users where id = %s", (guest_id,)).fetchone() == (0,)
+    assert db_admin.execute("select user_id::text from scratch_prd.events").fetchone() == (owner_id,)
     # もとのブラウザからも統合したデータが見える
     assert len(registered.get("/api/projects").json()) == 2
 
@@ -223,8 +225,8 @@ def test_login_discard_deletes_guest_data(
     assert login(other, guestData="discard").status_code == 200
 
     assert "捨てるメモ" not in str(other.get("/api/workspace/bootstrap").json())
-    assert db_admin.execute("select count(*) from idea_ws.users where id = %s", (guest_id,)).fetchone() == (0,)
-    assert db_admin.execute("select count(*) from idea_ws.notes where content = '捨てるメモ'").fetchone() == (0,)
+    assert db_admin.execute("select count(*) from scratch_prd.users where id = %s", (guest_id,)).fetchone() == (0,)
+    assert db_admin.execute("select count(*) from scratch_prd.notes where content = '捨てるメモ'").fetchone() == (0,)
 
 
 def test_merge_does_not_touch_other_users(
@@ -247,7 +249,7 @@ def test_merge_respects_project_limit(
 ) -> None:
     owner_id = registered.get("/api/auth/me").json()["user"]["id"]
     db_admin.execute(
-        "insert into idea_ws.projects (user_id, name) select %s, 'p' || g from generate_series(2, %s) g",
+        "insert into scratch_prd.projects (user_id, name) select %s, 'p' || g from generate_series(2, %s) g",
         (owner_id, config.MAX_PROJECTS_PER_USER),
     )
     other = make_client()
@@ -274,9 +276,9 @@ def test_rehash_on_login_when_parameters_change(
     from backend.app.services import passwords
 
     monkeypatch.setattr(passwords, "needs_rehash", lambda _hash: True)
-    before = db_admin.execute("select password_hash from idea_ws.password_credentials").fetchone()
+    before = db_admin.execute("select password_hash from scratch_prd.password_credentials").fetchone()
     assert login(make_client()).status_code == 200
-    after = db_admin.execute("select password_hash from idea_ws.password_credentials").fetchone()
+    after = db_admin.execute("select password_hash from scratch_prd.password_credentials").fetchone()
     assert before != after
 
 
@@ -331,7 +333,7 @@ def test_delete_account_removes_all_data(
     assert response.status_code == 204
     for table in ["users", "projects", "notes", "sessions", "user_identities", "password_credentials"]:
         column = "id" if table == "users" else "user_id"
-        count = db_admin.execute(f"select count(*) from idea_ws.{table} where {column} = %s", (user_id,)).fetchone()
+        count = db_admin.execute(f"select count(*) from scratch_prd.{table} where {column} = %s", (user_id,)).fetchone()
         assert count == (0,), table
     assert other_session.get("/api/auth/me").status_code == 401
     assert login(make_client()).status_code == 401
@@ -340,7 +342,7 @@ def test_delete_account_removes_all_data(
 def test_guest_can_delete_this_browsers_data(guest_client: TestClient, db_admin: psycopg.Connection[Any]) -> None:
     user_id = guest_client.get("/api/auth/me").json()["user"]["id"]
     assert guest_client.request("DELETE", "/api/account", json={}).status_code == 204
-    assert db_admin.execute("select count(*) from idea_ws.users where id = %s", (user_id,)).fetchone() == (0,)
+    assert db_admin.execute("select count(*) from scratch_prd.users where id = %s", (user_id,)).fetchone() == (0,)
     assert guest_client.get("/api/auth/me").status_code == 401
 
 
@@ -364,8 +366,8 @@ def test_cron_cleans_up(
     stale = make_client()
     login_guest(stale)
     db_admin.execute(
-        "update idea_ws.users set last_active_at = now() - interval '60 days'; "
-        "update idea_ws.sessions set expires_at = now() - interval '1 day'"
+        "update scratch_prd.users set last_active_at = now() - interval '60 days'; "
+        "update scratch_prd.sessions set expires_at = now() - interval '1 day'"
     )
 
     response = client.get("/api/cron/cleanup", headers={"Authorization": "Bearer test-cron-secret-0123456789"})
@@ -374,4 +376,4 @@ def test_cron_cleans_up(
     body = response.json()
     assert body["guestsDeleted"] == 1
     assert body["sessionsDeleted"] == 0  # ゲストと一緒に cascade で消えている
-    assert db_admin.execute("select count(*) from idea_ws.users").fetchone() == (0,)
+    assert db_admin.execute("select count(*) from scratch_prd.users").fetchone() == (0,)

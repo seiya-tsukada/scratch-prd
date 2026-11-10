@@ -6,4 +6,4 @@
 
 \set ON_ERROR_STOP on
 
-select * from idea_ws.cleanup_expired_auth();
+select * from scratch_prd.cleanup_expired_auth();

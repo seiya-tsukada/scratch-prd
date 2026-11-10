@@ -1,6 +1,6 @@
 """テスト全体のフィクスチャ。
 
-docker compose の db-test（localhost:54323）に対して、テストセッションの最初に idea_ws を作り直す。
+docker compose の db-test（localhost:54323）に対して、テストセッションの最初に scratch_prd を作り直す。
 
     docker compose up -d db-test
     uv run pytest
@@ -76,7 +76,7 @@ def db_admin(database_url: str) -> Iterator[psycopg.Connection[Any]]:
     with psycopg.connect(database_url, autocommit=True) as conn:
         yield conn
         for table in ["users", "rate_limit_buckets", "events", "ai_generations", "email_login_tokens", "oauth_states"]:
-            conn.execute(f"delete from idea_ws.{table}")
+            conn.execute(f"delete from scratch_prd.{table}")
 
 
 @pytest.fixture

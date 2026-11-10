@@ -9,12 +9,12 @@ Supabase は **マネージド Postgres としてのみ**使う（Supabase Auth�
 - [ ] データベースのパスワード（`postgres` ロール）をパスワードマネージャーに保存する
 - [ ] Project ref（`https://<project-ref>.supabase.co` の `<project-ref>`）を控える
 
-## 2. Data API に idea_ws を公開しない
+## 2. Data API に scratch_prd を公開しない
 
-- [ ] Project Settings → Data API → **Exposed schemas に `idea_ws` が含まれていない**ことを確認する（追加しない）
+- [ ] Project Settings → Data API → **Exposed schemas に `scratch_prd` が含まれていない**ことを確認する（追加しない）
 - [ ] 本サービスでは Data API を使わないため、可能なら Data API 自体を無効にする（他用途で使っていない場合）
 
-> 公開されていなくても、`idea_ws` は anon / authenticated / service_role から REVOKE 済みで、RLS も有効（anon / authenticated 向けのポリシーなし）。二重の防御になっている。
+> 公開されていなくても、`scratch_prd` は anon / authenticated / service_role から REVOKE 済みで、RLS も有効（anon / authenticated 向けのポリシーなし）。二重の防御になっている。
 
 ## 3. マイグレーションと seed の適用
 
@@ -59,15 +59,15 @@ DATABASE_URL=postgresql://idea_ws_app.<project-ref>:<password>@aws-0-<region>.po
 - [ ] 次の確認クエリが動くこと（`idea_ws_app` でプーラー経由に接続できること）を確かめる:
 
 ```bash
-psql "$DATABASE_URL" -c "select count(*) from idea_ws.sample_contents"     # → 1
-psql "$DATABASE_URL" -c "select current_setting('search_path')"            # → idea_ws, extensions
+psql "$DATABASE_URL" -c "select count(*) from scratch_prd.sample_contents"     # → 1
+psql "$DATABASE_URL" -c "select current_setting('search_path')"            # → scratch_prd, extensions
 ```
 
 - [ ] anon からは読めないことを確認する（SQL Editor で実行）:
 
 ```sql
 set role anon;
-select * from idea_ws.users;   -- permission denied for schema idea_ws になること
+select * from scratch_prd.users;   -- permission denied for schema scratch_prd になること
 reset role;
 ```
 

@@ -9,7 +9,7 @@
 |---|---|
 | フロント | Vite + React 19 + Tailwind CSS 4（`src/`） |
 | バックエンド | FastAPI（Python 3.12、`backend/`） |
-| DB | Supabase の Postgres を専用スキーマ `idea_ws` で利用（`supabase/migrations/`） |
+| DB | Supabase の Postgres を専用スキーマ `scratch_prd` で利用（`supabase/migrations/`） |
 | 認証 | 自前のゲストセッション（httpOnly Cookie）＋ 任意のメールアドレス + パスワード登録 |
 | AI | Gemini（未設定なら内蔵ジェネレータで応答し、その旨を画面に表示） |
 | ホスティング | Vercel（画面は CDN、`/api/*` は `api/index.py` の Python Function） |
@@ -124,11 +124,11 @@ Git で管理しているのは DB の初期状態だけ:
 作り直す前にデータを残したい場合のバックアップと戻し方（同じマイグレーションの状態に戻す場合のみ）:
 
 ```bash
-docker compose exec -T db pg_dump -U postgres --schema=idea_ws --no-owner > backup.sql
+docker compose exec -T db pg_dump -U postgres --schema=scratch_prd --no-owner > backup.sql
 ```
 
 ```bash
-docker compose exec -T db psql -U postgres -q -c 'drop schema idea_ws cascade'
+docker compose exec -T db psql -U postgres -q -c 'drop schema scratch_prd cascade'
 ```
 
 ```bash
@@ -137,7 +137,7 @@ docker compose exec -T db psql -U postgres -q -v ON_ERROR_STOP=1 < backup.sql
 
 `backup.sql` にはメモの本文やハッシュ化したセッションが含まれるため、コミットしない（`.gitignore` には入っていないので置き場所に注意する）。サンプルの内容をチームで共有したい場合は `supabase/seed.sql` を編集する。
 
-DB の中を見る場合: `docker compose exec db psql -U postgres`（例 `select * from idea_ws.funnel_daily;`）。
+DB の中を見る場合: `docker compose exec db psql -U postgres`（例 `select * from scratch_prd.funnel_daily;`）。
 
 ### メンテナンス用 SQL（`supabase/maintenance/`）
 
@@ -152,7 +152,7 @@ DB の中を見る場合: `docker compose exec db psql -U postgres`（例 `selec
 | ★ `delete_user.sql` | メールアドレスで 1 人削除（配下のデータも消える） | `psql "$DATABASE_URL_DIRECT" -v email=user@example.com -f supabase/maintenance/delete_user.sql` |
 | ★ `truncate_users.sql` | 全ユーザーとそのデータ・計測を消す（サンプルは残る） | `psql "$DATABASE_URL_DIRECT" -v confirm=yes -f supabase/maintenance/truncate_users.sql` |
 | ★ `truncate_data.sql` | サンプル以外の全テーブルを空にする | `psql "$DATABASE_URL_DIRECT" -v confirm=yes -f supabase/maintenance/truncate_data.sql` |
-| ★ `drop_schema.sql` | `idea_ws` スキーマを丸ごと削除 | `psql "$DATABASE_URL_DIRECT" -v confirm=yes -f supabase/maintenance/drop_schema.sql` |
+| ★ `drop_schema.sql` | `scratch_prd` スキーマを丸ごと削除 | `psql "$DATABASE_URL_DIRECT" -v confirm=yes -f supabase/maintenance/drop_schema.sql` |
 
 ローカル（docker compose の `db`）では、ホストに psql が無くてもコンテナの psql に標準入力で渡せる:
 
@@ -256,5 +256,5 @@ docker compose up --build
 
 ## 計測
 
-API で起きる出来事（ゲスト作成・メモ作成・PRD 生成・登録など）はサーバー側で、画面上の操作（コピー・ダウンロード・登録の案内など）はフロントから `idea_ws.events` に記録する。
-集計ビュー `idea_ws.funnel_daily`（ファネル）と `idea_ws.ai_fallback_daily`（AI のフォールバック率）を SQL Editor で参照する。
+API で起きる出来事（ゲスト作成・メモ作成・PRD 生成・登録など）はサーバー側で、画面上の操作（コピー・ダウンロード・登録の案内など）はフロントから `scratch_prd.events` に記録する。
+集計ビュー `scratch_prd.funnel_daily`（ファネル）と `scratch_prd.ai_fallback_daily`（AI のフォールバック率）を SQL Editor で参照する。

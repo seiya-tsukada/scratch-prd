@@ -1,9 +1,9 @@
 -- ========================================================
--- Idea Workspace: idea_ws スキーマ（テーブル・関数・ビュー・権限・RLS）
+-- Idea Workspace: scratch_prd スキーマ（テーブル・関数・ビュー・権限・RLS）
 --   * 冪等: 何度実行しても同じ状態になる。既にあるオブジェクトは作らない（関数・ビュー・トリガーは置き換える）
---   * Supabase Auth（auth.users）は使わない。ユーザーは idea_ws.users で管理する
+--   * Supabase Auth（auth.users）は使わない。ユーザーは scratch_prd.users で管理する
 --   * public スキーマは使わない
---   * idea_ws は Data API（PostgREST）の Exposed schemas に追加しない
+--   * scratch_prd は Data API（PostgREST）の Exposed schemas に追加しない
 --   * idea_ws_app のログイン可否とパスワードは含めない（docs/supabase-setup.md を参照）
 --   * PostgreSQL 14 以上（create or replace trigger）
 --
@@ -17,10 +17,10 @@ set client_min_messages = warning;
 
 create extension if not exists citext with schema extensions;
 
-create schema if not exists idea_ws;
+create schema if not exists scratch_prd;
 
 -- updated_at の自動更新
-create or replace function idea_ws.set_updated_at()
+create or replace function scratch_prd.set_updated_at()
 returns trigger
 language plpgsql
 set search_path = ''
@@ -35,7 +35,7 @@ $$;
 -- ユーザー・認証
 -- --------------------------------------------------------
 
-create table if not exists idea_ws.users (
+create table if not exists scratch_prd.users (
   id uuid primary key default gen_random_uuid(),
   is_guest boolean not null default true,
   email extensions.citext unique,
@@ -52,11 +52,11 @@ create table if not exists idea_ws.users (
   constraint users_onboarding_consistent check ((onboarding_completed_at is null) = (onboarding_result is null))
 );
 
-create index if not exists users_guest_last_active_idx on idea_ws.users (last_active_at) where is_guest;
+create index if not exists users_guest_last_active_idx on scratch_prd.users (last_active_at) where is_guest;
 
-create table if not exists idea_ws.user_identities (
+create table if not exists scratch_prd.user_identities (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references idea_ws.users (id) on delete cascade,
+  user_id uuid not null references scratch_prd.users (id) on delete cascade,
   provider text not null check (provider in ('email', 'google', 'password')),
   provider_subject text not null,
   email extensions.citext,
@@ -65,20 +65,20 @@ create table if not exists idea_ws.user_identities (
   unique (provider, provider_subject)
 );
 
-create index if not exists user_identities_user_id_idx on idea_ws.user_identities (user_id);
+create index if not exists user_identities_user_id_idx on scratch_prd.user_identities (user_id);
 
 -- パスワードは Argon2id のハッシュのみ保存する
-create table if not exists idea_ws.password_credentials (
-  user_id uuid primary key references idea_ws.users (id) on delete cascade,
+create table if not exists scratch_prd.password_credentials (
+  user_id uuid primary key references scratch_prd.users (id) on delete cascade,
   password_hash text not null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 -- token_hash / ip_hash はサーバー側 pepper による HMAC-SHA256。平文は保存しない
-create table if not exists idea_ws.sessions (
+create table if not exists scratch_prd.sessions (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references idea_ws.users (id) on delete cascade,
+  user_id uuid not null references scratch_prd.users (id) on delete cascade,
   token_hash bytea not null unique,
   created_at timestamptz not null default now(),
   last_seen_at timestamptz not null default now(),
@@ -88,33 +88,33 @@ create table if not exists idea_ws.sessions (
   ip_hash bytea
 );
 
-create index if not exists sessions_user_id_idx on idea_ws.sessions (user_id);
-create index if not exists sessions_expires_at_idx on idea_ws.sessions (expires_at);
+create index if not exists sessions_user_id_idx on scratch_prd.sessions (user_id);
+create index if not exists sessions_expires_at_idx on scratch_prd.sessions (expires_at);
 
-create table if not exists idea_ws.email_login_tokens (
+create table if not exists scratch_prd.email_login_tokens (
   id uuid primary key default gen_random_uuid(),
   email extensions.citext not null,
   token_hash bytea not null unique,
   -- ゲストからの登録なら昇格先のユーザー
-  requested_by_user_id uuid references idea_ws.users (id) on delete cascade,
+  requested_by_user_id uuid references scratch_prd.users (id) on delete cascade,
   created_at timestamptz not null default now(),
   expires_at timestamptz not null,
   used_at timestamptz
 );
 
-create index if not exists email_login_tokens_expires_at_idx on idea_ws.email_login_tokens (expires_at);
+create index if not exists email_login_tokens_expires_at_idx on scratch_prd.email_login_tokens (expires_at);
 
 -- state はハッシュで保存。code_verifier（PKCE）はコールバックで使うため保持し、短い有効期限で掃除する
-create table if not exists idea_ws.oauth_states (
+create table if not exists scratch_prd.oauth_states (
   state_hash bytea primary key,
   code_verifier text not null,
-  requested_by_user_id uuid references idea_ws.users (id) on delete cascade,
+  requested_by_user_id uuid references scratch_prd.users (id) on delete cascade,
   redirect_to text,
   created_at timestamptz not null default now(),
   expires_at timestamptz not null
 );
 
-create index if not exists oauth_states_expires_at_idx on idea_ws.oauth_states (expires_at);
+create index if not exists oauth_states_expires_at_idx on scratch_prd.oauth_states (expires_at);
 
 -- --------------------------------------------------------
 -- ユーザーデータ（src/types/index.ts と対応）
@@ -123,9 +123,9 @@ create index if not exists oauth_states_expires_at_idx on idea_ws.oauth_states (
 --     （projects.user_id を書き換えると、配下の notes / prds / versions / preferences / tags も付け替わる）
 -- --------------------------------------------------------
 
-create table if not exists idea_ws.projects (
+create table if not exists scratch_prd.projects (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references idea_ws.users (id) on delete cascade,
+  user_id uuid not null references scratch_prd.users (id) on delete cascade,
   name text not null,
   description text not null default '',
   created_at timestamptz not null default now(),
@@ -133,11 +133,11 @@ create table if not exists idea_ws.projects (
   unique (id, user_id)
 );
 
-create index if not exists projects_user_id_idx on idea_ws.projects (user_id, updated_at desc);
+create index if not exists projects_user_id_idx on scratch_prd.projects (user_id, updated_at desc);
 
-create table if not exists idea_ws.notes (
+create table if not exists scratch_prd.notes (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references idea_ws.users (id) on delete cascade,
+  user_id uuid not null references scratch_prd.users (id) on delete cascade,
   project_id uuid not null,
   title text not null default '',
   content text not null default '',
@@ -146,15 +146,15 @@ create table if not exists idea_ws.notes (
   updated_at timestamptz not null default now(),
   -- note_tags から (id, project_id, user_id) で参照するため
   unique (id, project_id, user_id),
-  foreign key (project_id, user_id) references idea_ws.projects (id, user_id) on delete cascade on update cascade
+  foreign key (project_id, user_id) references scratch_prd.projects (id, user_id) on delete cascade on update cascade
 );
 
-create index if not exists notes_project_idx on idea_ws.notes (user_id, project_id, updated_at desc);
+create index if not exists notes_project_idx on scratch_prd.notes (user_id, project_id, updated_at desc);
 
 -- generation_mode の 'unknown' は旧データ（PRD セクションのメモ）から変換した PRD。AI の生成には使わない
-create table if not exists idea_ws.prd_documents (
+create table if not exists scratch_prd.prd_documents (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references idea_ws.users (id) on delete cascade,
+  user_id uuid not null references scratch_prd.users (id) on delete cascade,
   project_id uuid not null,
   title text not null,
   content text not null default '',
@@ -170,15 +170,15 @@ create table if not exists idea_ws.prd_documents (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (id, user_id),
-  foreign key (project_id, user_id) references idea_ws.projects (id, user_id) on delete cascade on update cascade
+  foreign key (project_id, user_id) references scratch_prd.projects (id, user_id) on delete cascade on update cascade
 );
 
-create index if not exists prd_documents_project_idx on idea_ws.prd_documents (user_id, project_id, updated_at desc);
+create index if not exists prd_documents_project_idx on scratch_prd.prd_documents (user_id, project_id, updated_at desc);
 
 -- 保存のたびに積まれる旧版のスナップショット
-create table if not exists idea_ws.prd_versions (
+create table if not exists scratch_prd.prd_versions (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references idea_ws.users (id) on delete cascade,
+  user_id uuid not null references scratch_prd.users (id) on delete cascade,
   prd_document_id uuid not null,
   version_number integer not null check (version_number >= 1),
   title text not null,
@@ -194,12 +194,12 @@ create table if not exists idea_ws.prd_versions (
   created_at timestamptz not null default now(),
   unique (prd_document_id, version_number),
   foreign key (prd_document_id, user_id)
-    references idea_ws.prd_documents (id, user_id) on delete cascade on update cascade
+    references scratch_prd.prd_documents (id, user_id) on delete cascade on update cascade
 );
 
-create table if not exists idea_ws.workspace_preferences (
+create table if not exists scratch_prd.workspace_preferences (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references idea_ws.users (id) on delete cascade,
+  user_id uuid not null references scratch_prd.users (id) on delete cascade,
   project_id uuid not null,
   pane_count smallint not null default 2 check (pane_count between 1 and 4),
   panes jsonb not null default '[]',
@@ -207,13 +207,13 @@ create table if not exists idea_ws.workspace_preferences (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (user_id, project_id),
-  foreign key (project_id, user_id) references idea_ws.projects (id, user_id) on delete cascade on update cascade
+  foreign key (project_id, user_id) references scratch_prd.projects (id, user_id) on delete cascade on update cascade
 );
 
 -- メモのタグ（プロジェクト単位。名前は大文字小文字を区別せずユニーク。色は任意）。PRD にはタグを付けない
-create table if not exists idea_ws.tags (
+create table if not exists scratch_prd.tags (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references idea_ws.users (id) on delete cascade,
+  user_id uuid not null references scratch_prd.users (id) on delete cascade,
   project_id uuid not null,
   name text not null check (length(btrim(name)) between 1 and 50),
   -- 色は画面のパレットのキー（src/config/tags.ts / backend/app/config.py の TAG_COLORS）
@@ -221,13 +221,13 @@ create table if not exists idea_ws.tags (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   unique (id, project_id, user_id),
-  foreign key (project_id, user_id) references idea_ws.projects (id, user_id) on delete cascade on update cascade
+  foreign key (project_id, user_id) references scratch_prd.projects (id, user_id) on delete cascade on update cascade
 );
 
-create unique index if not exists tags_project_name_idx on idea_ws.tags (user_id, project_id, lower(name));
+create unique index if not exists tags_project_name_idx on scratch_prd.tags (user_id, project_id, lower(name));
 
 -- メモとタグの多対多。タグやメモを消すと紐付けも消える
-create table if not exists idea_ws.note_tags (
+create table if not exists scratch_prd.note_tags (
   note_id uuid not null,
   tag_id uuid not null,
   user_id uuid not null,
@@ -236,20 +236,20 @@ create table if not exists idea_ws.note_tags (
   primary key (note_id, tag_id),
   -- メモとタグは同じプロジェクト・同じユーザーのものに限る
   foreign key (note_id, project_id, user_id)
-    references idea_ws.notes (id, project_id, user_id) on delete cascade on update cascade,
+    references scratch_prd.notes (id, project_id, user_id) on delete cascade on update cascade,
   foreign key (tag_id, project_id, user_id)
-    references idea_ws.tags (id, project_id, user_id) on delete cascade on update cascade
+    references scratch_prd.tags (id, project_id, user_id) on delete cascade on update cascade
 );
 
 -- タグからメモを引く（絞り込み・タグ削除時の cascade）
-create index if not exists note_tags_tag_idx on idea_ws.note_tags (tag_id);
+create index if not exists note_tags_tag_idx on scratch_prd.note_tags (tag_id);
 
 -- --------------------------------------------------------
 -- コンテンツ（デプロイなしで初回体験を調整するためのデータ）
 -- --------------------------------------------------------
 
 -- 新規ゲストに複製するサンプル。content の形式は supabase/seed.sql の先頭コメントを参照
-create table if not exists idea_ws.sample_contents (
+create table if not exists scratch_prd.sample_contents (
   id uuid primary key default gen_random_uuid(),
   version integer not null unique,
   is_active boolean not null default false,
@@ -260,7 +260,7 @@ create table if not exists idea_ws.sample_contents (
 
 -- 有効なサンプルは常に 1 件まで
 create unique index if not exists sample_contents_single_active_idx
-  on idea_ws.sample_contents (is_active) where is_active;
+  on scratch_prd.sample_contents (is_active) where is_active;
 
 -- --------------------------------------------------------
 -- グロース計測
@@ -268,22 +268,22 @@ create unique index if not exists sample_contents_single_active_idx
 --   properties に個人情報やメモ本文を入れないこと
 -- --------------------------------------------------------
 
-create table if not exists idea_ws.events (
+create table if not exists scratch_prd.events (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid references idea_ws.users (id) on delete set null,
-  session_id uuid references idea_ws.sessions (id) on delete set null,
+  user_id uuid references scratch_prd.users (id) on delete set null,
+  session_id uuid references scratch_prd.sessions (id) on delete set null,
   event_name text not null,
   properties jsonb not null default '{}',
   created_at timestamptz not null default now()
 );
 
-create index if not exists events_name_created_idx on idea_ws.events (event_name, created_at);
-create index if not exists events_user_idx on idea_ws.events (user_id);
-create index if not exists events_session_idx on idea_ws.events (session_id);
+create index if not exists events_name_created_idx on scratch_prd.events (event_name, created_at);
+create index if not exists events_user_idx on scratch_prd.events (user_id);
+create index if not exists events_session_idx on scratch_prd.events (session_id);
 
-create table if not exists idea_ws.ai_generations (
+create table if not exists scratch_prd.ai_generations (
   id uuid primary key default gen_random_uuid(),
-  user_id uuid references idea_ws.users (id) on delete set null,
+  user_id uuid references scratch_prd.users (id) on delete set null,
   kind text not null check (kind in ('structure', 'prd')),
   mode text,
   detail_level text,
@@ -296,28 +296,28 @@ create table if not exists idea_ws.ai_generations (
   created_at timestamptz not null default now()
 );
 
-create index if not exists ai_generations_created_idx on idea_ws.ai_generations (created_at);
-create index if not exists ai_generations_user_idx on idea_ws.ai_generations (user_id);
+create index if not exists ai_generations_created_idx on scratch_prd.ai_generations (created_at);
+create index if not exists ai_generations_user_idx on scratch_prd.ai_generations (user_id);
 
--- 日次の AI 利用回数（usage_date は JST）。加算は idea_ws.consume_quota 経由で行う
-create table if not exists idea_ws.api_usage (
-  user_id uuid not null references idea_ws.users (id) on delete cascade,
+-- 日次の AI 利用回数（usage_date は JST）。加算は scratch_prd.consume_quota 経由で行う
+create table if not exists scratch_prd.api_usage (
+  user_id uuid not null references scratch_prd.users (id) on delete cascade,
   usage_date date not null,
   kind text not null,
   count integer not null default 0 check (count >= 0),
   primary key (user_id, usage_date, kind)
 );
 
--- IP 単位などユーザーに紐づかないレート制限（固定ウィンドウ）。加算は idea_ws.consume_rate_limit 経由
+-- IP 単位などユーザーに紐づかないレート制限（固定ウィンドウ）。加算は scratch_prd.consume_rate_limit 経由
 --   key は '<種別>:<IP の HMAC ハッシュ>' などとし、生の IP を入れないこと
-create table if not exists idea_ws.rate_limit_buckets (
+create table if not exists scratch_prd.rate_limit_buckets (
   key text not null,
   window_start timestamptz not null,
   count integer not null default 0 check (count >= 0),
   primary key (key, window_start)
 );
 
-create index if not exists rate_limit_buckets_window_idx on idea_ws.rate_limit_buckets (window_start);
+create index if not exists rate_limit_buckets_window_idx on scratch_prd.rate_limit_buckets (window_start);
 
 -- --------------------------------------------------------
 -- updated_at トリガー
@@ -333,8 +333,8 @@ begin
   ]
   loop
     execute format(
-      'create or replace trigger set_updated_at before update on idea_ws.%I
-         for each row execute function idea_ws.set_updated_at()',
+      'create or replace trigger set_updated_at before update on scratch_prd.%I
+         for each row execute function scratch_prd.set_updated_at()',
       t
     );
   end loop;
@@ -347,7 +347,7 @@ $$;
 
 -- 日次クォータ（日付は JST）を上限判定つきでアトミックに 1 加算する。
 -- 加算できたら true、上限に達していたら false（加算しない）
-create or replace function idea_ws.consume_quota(p_user_id uuid, p_kind text, p_limit integer)
+create or replace function scratch_prd.consume_quota(p_user_id uuid, p_kind text, p_limit integer)
 returns boolean
 language plpgsql
 set search_path = ''
@@ -359,7 +359,7 @@ begin
     return false;
   end if;
 
-  insert into idea_ws.api_usage as u (user_id, usage_date, kind, count)
+  insert into scratch_prd.api_usage as u (user_id, usage_date, kind, count)
   values (p_user_id, (now() at time zone 'Asia/Tokyo')::date, p_kind, 1)
   on conflict (user_id, usage_date, kind)
     do update set count = u.count + 1
@@ -372,7 +372,7 @@ $$;
 
 -- 固定ウィンドウのレート制限を上限判定つきでアトミックに 1 加算する。
 -- 加算できたら true、ウィンドウ内の上限に達していたら false（加算しない）
-create or replace function idea_ws.consume_rate_limit(p_key text, p_window_seconds integer, p_limit integer)
+create or replace function scratch_prd.consume_rate_limit(p_key text, p_window_seconds integer, p_limit integer)
 returns boolean
 language plpgsql
 set search_path = ''
@@ -390,7 +390,7 @@ begin
 
   v_window_start := to_timestamp(floor(extract(epoch from now()) / p_window_seconds) * p_window_seconds);
 
-  insert into idea_ws.rate_limit_buckets as b (key, window_start, count)
+  insert into scratch_prd.rate_limit_buckets as b (key, window_start, count)
   values (p_key, v_window_start, 1)
   on conflict (key, window_start)
     do update set count = b.count + 1
@@ -404,7 +404,7 @@ $$;
 -- 有効なセッションが残っておらず、p_inactive_days 日以上アクセスのないゲストを削除する。
 -- そのようなゲストのデータには誰もアクセスできないため、データの有無は問わない。
 -- 削除したユーザー数を返す
-create or replace function idea_ws.cleanup_inactive_guests(p_inactive_days integer default 30)
+create or replace function scratch_prd.cleanup_inactive_guests(p_inactive_days integer default 30)
 returns integer
 language plpgsql
 set search_path = ''
@@ -412,12 +412,12 @@ as $$
 declare
   v_deleted integer;
 begin
-  delete from idea_ws.users u
+  delete from scratch_prd.users u
   where u.is_guest
     and u.last_active_at < now() - make_interval(days => p_inactive_days)
     and not exists (
       select 1
-      from idea_ws.sessions s
+      from scratch_prd.sessions s
       where s.user_id = u.id
         and s.revoked_at is null
         and s.expires_at > now()
@@ -428,7 +428,7 @@ end;
 $$;
 
 -- 期限切れ・失効済みのセッション、使用済み・期限切れのログイン用トークン、古いレート制限バケットを削除する
-create or replace function idea_ws.cleanup_expired_auth(p_rate_limit_retention interval default interval '2 days')
+create or replace function scratch_prd.cleanup_expired_auth(p_rate_limit_retention interval default interval '2 days')
 returns table (
   sessions_deleted integer,
   email_login_tokens_deleted integer,
@@ -439,19 +439,19 @@ language plpgsql
 set search_path = ''
 as $$
 begin
-  delete from idea_ws.sessions
+  delete from scratch_prd.sessions
   where expires_at <= now() or revoked_at is not null;
   get diagnostics sessions_deleted = row_count;
 
-  delete from idea_ws.email_login_tokens
+  delete from scratch_prd.email_login_tokens
   where expires_at <= now() or used_at is not null;
   get diagnostics email_login_tokens_deleted = row_count;
 
-  delete from idea_ws.oauth_states
+  delete from scratch_prd.oauth_states
   where expires_at <= now();
   get diagnostics oauth_states_deleted = row_count;
 
-  delete from idea_ws.rate_limit_buckets
+  delete from scratch_prd.rate_limit_buckets
   where window_start < now() - p_rate_limit_retention;
   get diagnostics rate_limit_buckets_deleted = row_count;
 
@@ -467,10 +467,10 @@ $$;
 -- --------------------------------------------------------
 
 -- ゲスト作成日ごとのコホート: その日に作られたゲストのうち、その後メモ作成 / PRD 生成 / 登録まで進んだ人数
-create or replace view idea_ws.funnel_daily with (security_invoker = true) as
+create or replace view scratch_prd.funnel_daily with (security_invoker = true) as
 with first_events as (
   select user_id, event_name, min(created_at) as first_at
-  from idea_ws.events
+  from scratch_prd.events
   where user_id is not null
     and event_name in ('guest_created', 'note_created', 'prd_generated', 'signup_completed')
   group by user_id, event_name
@@ -494,7 +494,7 @@ group by c.day
 order by c.day;
 
 -- AI 生成の日次件数とフォールバック率（理由別）
-create or replace view idea_ws.ai_fallback_daily with (security_invoker = true) as
+create or replace view scratch_prd.ai_fallback_daily with (security_invoker = true) as
 select
   (created_at at time zone 'Asia/Tokyo')::date as day,
   kind,
@@ -505,7 +505,7 @@ select
   count(*) filter (where error_type like 'ai_error%') as ai_errors,
   count(*) filter (where error_type = 'invalid_response') as invalid_responses,
   round(avg(latency_ms)) as avg_latency_ms
-from idea_ws.ai_generations
+from scratch_prd.ai_generations
 group by 1, 2
 order by 1, 2;
 
@@ -516,17 +516,17 @@ order by 1, 2;
 --     （Supabase では自作ロールに BYPASSRLS を付けられないため、idea_ws_app 限定のポリシーで通す）
 -- --------------------------------------------------------
 
-revoke all on schema idea_ws from public, anon, authenticated, service_role;
-revoke all on all tables in schema idea_ws from public, anon, authenticated, service_role;
-revoke all on all sequences in schema idea_ws from public, anon, authenticated, service_role;
-revoke all on all functions in schema idea_ws from public, anon, authenticated, service_role;
+revoke all on schema scratch_prd from public, anon, authenticated, service_role;
+revoke all on all tables in schema scratch_prd from public, anon, authenticated, service_role;
+revoke all on all sequences in schema scratch_prd from public, anon, authenticated, service_role;
+revoke all on all functions in schema scratch_prd from public, anon, authenticated, service_role;
 
 -- 今後 postgres が作るオブジェクトにも既定の権限を付けない
-alter default privileges for role postgres in schema idea_ws
+alter default privileges for role postgres in schema scratch_prd
   revoke all on tables from public, anon, authenticated, service_role;
-alter default privileges for role postgres in schema idea_ws
+alter default privileges for role postgres in schema scratch_prd
   revoke all on sequences from public, anon, authenticated, service_role;
-alter default privileges for role postgres in schema idea_ws
+alter default privileges for role postgres in schema scratch_prd
   revoke all on functions from public, anon, authenticated, service_role;
 
 do $$
@@ -538,40 +538,40 @@ end;
 $$;
 
 -- citext の演算子（大文字小文字を区別しない比較）を解決するため extensions も検索パスに含める
-alter role idea_ws_app set search_path = idea_ws, extensions;
+alter role idea_ws_app set search_path = scratch_prd, extensions;
 
-grant usage on schema idea_ws to idea_ws_app;
+grant usage on schema scratch_prd to idea_ws_app;
 grant usage on schema extensions to idea_ws_app;
 
 -- ユーザー・認証・ユーザーデータ・計測: 読み書き
 grant select, insert, update, delete on
-  idea_ws.users,
-  idea_ws.user_identities,
-  idea_ws.password_credentials,
-  idea_ws.sessions,
-  idea_ws.email_login_tokens,
-  idea_ws.oauth_states,
-  idea_ws.projects,
-  idea_ws.notes,
-  idea_ws.prd_documents,
-  idea_ws.prd_versions,
-  idea_ws.workspace_preferences,
-  idea_ws.tags,
-  idea_ws.note_tags,
-  idea_ws.events,
-  idea_ws.ai_generations,
-  idea_ws.api_usage,
-  idea_ws.rate_limit_buckets
+  scratch_prd.users,
+  scratch_prd.user_identities,
+  scratch_prd.password_credentials,
+  scratch_prd.sessions,
+  scratch_prd.email_login_tokens,
+  scratch_prd.oauth_states,
+  scratch_prd.projects,
+  scratch_prd.notes,
+  scratch_prd.prd_documents,
+  scratch_prd.prd_versions,
+  scratch_prd.workspace_preferences,
+  scratch_prd.tags,
+  scratch_prd.note_tags,
+  scratch_prd.events,
+  scratch_prd.ai_generations,
+  scratch_prd.api_usage,
+  scratch_prd.rate_limit_buckets
 to idea_ws_app;
 
 -- コンテンツ: 読み取りのみ（編集は postgres ロールで行う）
-grant select on idea_ws.sample_contents to idea_ws_app;
+grant select on scratch_prd.sample_contents to idea_ws_app;
 
 grant execute on function
-  idea_ws.consume_quota(uuid, text, integer),
-  idea_ws.consume_rate_limit(text, integer, integer),
-  idea_ws.cleanup_inactive_guests(integer),
-  idea_ws.cleanup_expired_auth(interval)
+  scratch_prd.consume_quota(uuid, text, integer),
+  scratch_prd.consume_rate_limit(text, integer, integer),
+  scratch_prd.cleanup_inactive_guests(integer),
+  scratch_prd.cleanup_expired_auth(interval)
 to idea_ws_app;
 
 -- --------------------------------------------------------
@@ -587,15 +587,15 @@ begin
     select c.relname
     from pg_class c
     join pg_namespace n on n.oid = c.relnamespace
-    where n.nspname = 'idea_ws' and c.relkind = 'r'
+    where n.nspname = 'scratch_prd' and c.relkind = 'r'
   loop
-    execute format('alter table idea_ws.%I enable row level security', t.relname);
+    execute format('alter table scratch_prd.%I enable row level security', t.relname);
     if not exists (
       select 1 from pg_policies
-      where schemaname = 'idea_ws' and tablename = t.relname and policyname = 'idea_ws_app_all'
+      where schemaname = 'scratch_prd' and tablename = t.relname and policyname = 'idea_ws_app_all'
     ) then
       execute format(
-        'create policy idea_ws_app_all on idea_ws.%I for all to idea_ws_app using (true) with check (true)',
+        'create policy idea_ws_app_all on scratch_prd.%I for all to idea_ws_app using (true) with check (true)',
         t.relname
       );
     end if;

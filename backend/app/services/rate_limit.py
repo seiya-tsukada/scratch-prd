@@ -11,13 +11,13 @@ from backend.app.db import Conn
 
 
 async def consume_quota(conn: Conn, user_id: UUID, kind: str, limit: int) -> bool:
-    cur = await conn.execute("select idea_ws.consume_quota(%s, %s, %s) as ok", (user_id, kind, limit))
+    cur = await conn.execute("select scratch_prd.consume_quota(%s, %s, %s) as ok", (user_id, kind, limit))
     row = await cur.fetchone()
     return bool(row and row["ok"])
 
 
 async def consume_rate_limit(conn: Conn, key: str, window_seconds: int, limit: int) -> bool:
-    cur = await conn.execute("select idea_ws.consume_rate_limit(%s, %s, %s) as ok", (key, window_seconds, limit))
+    cur = await conn.execute("select scratch_prd.consume_rate_limit(%s, %s, %s) as ok", (key, window_seconds, limit))
     row = await cur.fetchone()
     return bool(row and row["ok"])
 

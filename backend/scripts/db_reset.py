@@ -1,4 +1,4 @@
-"""ローカル Postgres の idea_ws スキーマを作り直し（drop → マイグレーション → seed）、データを空にする。
+"""ローカル Postgres の scratch_prd スキーマを作り直し（drop → マイグレーション → seed）、データを空にする。
 
 本番（Supabase）には使わない。データを残したまま最新にするだけなら db_migrate を使う。
 
@@ -25,7 +25,7 @@ from backend.scripts.db_migrate import (
 def reset_database(database_url: str, *, seed: bool = True, app_password: str = DEFAULT_LOCAL_APP_PASSWORD) -> None:
     ensure_local(database_url)
     with psycopg.connect(database_url, autocommit=True) as conn:
-        conn.execute("drop schema if exists idea_ws cascade")
+        conn.execute("drop schema if exists scratch_prd cascade")
         apply_all(conn, seed=seed, app_password=app_password)
 
 
@@ -37,7 +37,7 @@ def main() -> None:
 
     reset_database(args.database_url, seed=not args.no_seed)
     seed_label = "なし" if args.no_seed else "あり"
-    print(f"idea_ws を作り直しました（{len(migration_files())} ファイル、seed={seed_label}）")
+    print(f"scratch_prd を作り直しました（{len(migration_files())} ファイル、seed={seed_label}）")
 
 
 if __name__ == "__main__":

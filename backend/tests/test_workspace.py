@@ -95,8 +95,10 @@ def test_update_and_delete_project(guest_client: TestClient, db_admin: psycopg.C
     prd = guest_client.post(f"/api/projects/{project['id']}/prds", json=PRD_BODY).json()
 
     assert guest_client.delete(f"/api/projects/{project['id']}").status_code == 204
-    assert db_admin.execute("select count(*) from idea_ws.notes where id = %s", (note["id"],)).fetchone() == (0,)
-    assert db_admin.execute("select count(*) from idea_ws.prd_documents where id = %s", (prd["id"],)).fetchone() == (0,)
+    assert db_admin.execute("select count(*) from scratch_prd.notes where id = %s", (note["id"],)).fetchone() == (0,)
+    assert db_admin.execute(
+        "select count(*) from scratch_prd.prd_documents where id = %s", (prd["id"],)
+    ).fetchone() == (0,)
     assert guest_client.delete(f"/api/projects/{project['id']}").status_code == 404
 
 
@@ -108,7 +110,7 @@ def test_project_name_is_validated(guest_client: TestClient, body: dict[str, Any
 def test_project_limit(guest_client: TestClient, db_admin: psycopg.Connection[Any]) -> None:
     user_id = guest_client.get("/api/auth/me").json()["user"]["id"]
     db_admin.execute(
-        "insert into idea_ws.projects (user_id, name) select %s, 'p' || g from generate_series(2, %s) g",
+        "insert into scratch_prd.projects (user_id, name) select %s, 'p' || g from generate_series(2, %s) g",
         (user_id, config.MAX_PROJECTS_PER_USER),
     )
     response = guest_client.post("/api/projects", json={"name": "one too many"})
@@ -249,8 +251,8 @@ def test_tag_limits(guest_client: TestClient, db_admin: psycopg.Connection[Any])
     assert guest_client.put(f"/api/notes/{note['id']}/tags", json={"tagIds": too_many}).status_code == 422
 
     db_admin.execute(
-        "insert into idea_ws.tags (user_id, project_id, name) "
-        "select user_id, id, 't' || g from idea_ws.projects, generate_series(1, %s) g where id = %s",
+        "insert into scratch_prd.tags (user_id, project_id, name) "
+        "select user_id, id, 't' || g from scratch_prd.projects, generate_series(1, %s) g where id = %s",
         (config.MAX_TAGS_PER_PROJECT, pid),
     )
     response = guest_client.post(f"/api/projects/{pid}/tags", json={"name": "one more"})

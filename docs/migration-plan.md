@@ -22,17 +22,17 @@
 
 ---
 
-## Phase 1：DB スキーマ（`idea_ws`）
+## Phase 1：DB スキーマ（`scratch_prd`）
 
 **ブランチ**: `feature/phase1-db-schema`
 
 ### 新規ファイル
-- `supabase/migrations/<timestamp>_idea_ws_schema.sql`：スキーマ・拡張（`citext`, `pgcrypto`）・全テーブル・インデックス・`updated_at` トリガー
-- `supabase/migrations/<timestamp>_idea_ws_functions.sql`：`consume_quota(user_id, kind, limit)`、`consume_rate_limit(key, window_seconds, limit)`、掃除関数（`cleanup_inactive_guests(days)`, `cleanup_expired_auth()`）
-- `supabase/migrations/<timestamp>_idea_ws_privileges.sql`：RLS 有効化、`anon` / `authenticated` からの REVOKE、`ALTER DEFAULT PRIVILEGES` での将来テーブルへの REVOKE、アプリ用ロールの GRANT
+- `supabase/migrations/<timestamp>_scratch_prd_schema.sql`：スキーマ・拡張（`citext`, `pgcrypto`）・全テーブル・インデックス・`updated_at` トリガー
+- `supabase/migrations/<timestamp>_scratch_prd_functions.sql`：`consume_quota(user_id, kind, limit)`、`consume_rate_limit(key, window_seconds, limit)`、掃除関数（`cleanup_inactive_guests(days)`, `cleanup_expired_auth()`）
+- `supabase/migrations/<timestamp>_scratch_prd_privileges.sql`：RLS 有効化、`anon` / `authenticated` からの REVOKE、`ALTER DEFAULT PRIVILEGES` での将来テーブルへの REVOKE、アプリ用ロールの GRANT
 - `supabase/seed.sql`：`section_templates`、`sample_contents`（`seed.ts` の内容を jsonb 化。サンプル内の ID はキー名で持ち、複製時に uuid を振る）
 - `docker-compose.yml`：ローカル Postgres（Supabase の Postgres イメージを第一候補。`anon` / `authenticated` ロールが存在する環境で検証するため。要確認）
-- `backend/tests/db/test_privileges.py`：`SET ROLE anon` / `authenticated` で `idea_ws` の全テーブルが読めないこと、`consume_quota` の上限挙動、掃除関数、cascade 削除を確認
+- `backend/tests/db/test_privileges.py`：`SET ROLE anon` / `authenticated` で `scratch_prd` の全テーブルが読めないこと、`consume_quota` の上限挙動、掃除関数、cascade 削除を確認
 - `pyproject.toml`（最小構成: psycopg, pytest）、`docs/supabase-setup.md`（手作業チェックリスト）
 
 ### スキーマ設計の補足
@@ -40,7 +40,7 @@
 - `prd_documents.source_note_ids` は uuid[] / jsonb（メモ削除後も参照履歴を残すため FK にしない）。
 - `prd_versions` は `(prd_document_id, version_number)` unique。
 - `workspace_preferences` は `(user_id, project_id)` unique。
-- **IP 単位のレート制限用テーブル** `rate_limit_buckets(key, window_start, count)` と、上限判定つきでアトミックに加算する関数（例：`idea_ws.consume_rate_limit(key, window_seconds, limit) returns boolean`）を作る。`key` は `<エンドポイント種別>:<IP の HMAC ハッシュ>` とし、生の IP は保存しない。古いウィンドウは掃除関数で削除する。
+- **IP 単位のレート制限用テーブル** `rate_limit_buckets(key, window_start, count)` と、上限判定つきでアトミックに加算する関数（例：`scratch_prd.consume_rate_limit(key, window_seconds, limit) returns boolean`）を作る。`key` は `<エンドポイント種別>:<IP の HMAC ハッシュ>` とし、生の IP は保存しない。古いウィンドウは掃除関数で削除する。
 
 ### 完了条件
 `docker compose up` した Postgres にマイグレーションと seed が通り、権限テストが pytest で通る。
@@ -107,7 +107,7 @@
 > 方針変更（Phase 5 着手時）: メールのマジックリンクと Google OAuth は**保留**とし、**メールアドレス + パスワード**の自前ログインを実装した。
 > メールアドレスの確認・パスワード再設定は、メール送信を導入するときに合わせて追加する（下記「保留事項」）。
 
-- マイグレーション `20261027000001_idea_ws_password_auth.sql`：`password_credentials`（Argon2id のハッシュ）、`user_identities.provider` に `password`、統合用に子テーブルの複合外部キーへ `on update cascade`
+- マイグレーション `20261027000001_scratch_prd_password_auth.sql`：`password_credentials`（Argon2id のハッシュ）、`user_identities.provider` に `password`、統合用に子テーブルの複合外部キーへ `on update cascade`
 - `POST /api/auth/register`：今のゲストの users 行をそのまま正規ユーザーに昇格（データはそのまま）、セッションを再発行
 - `POST /api/auth/login`：ゲストにデータがあれば 409 `guest_data_exists`。`guestData: merge | discard` を付けて再送すると、1 トランザクションで統合（`projects.user_id` の付け替えが配下へ cascade、計測データも引き継ぐ）または破棄してからログイン
   - 指示書の `POST /api/account/merge` は、ゲストのセッションと確認済みの資格情報を同時に扱えるログイン時の処理に統合した
@@ -129,7 +129,7 @@
 **ブランチ**: `feature/phase6-analytics-deploy`
 
 - `POST /api/events`（ホワイトリスト + properties のキーもイベント別に検証）、`src/services/analytics.ts`（失敗しても UI を止めない、`sendBeacon` 併用）
-- ファネル・フォールバック率の SQL ビュー（`idea_ws` 内。Data API には出ない）
+- ファネル・フォールバック率の SQL ビュー（`scratch_prd` 内。Data API には出ない）
 - `vercel.json` / エントリポイント：静的ビルド + FastAPI Function、SPA フォールバック、Cron（要確認：Vercel の FastAPI 対応・Python ランタイムのバージョン・関数サイズ上限・Cron のプラン制限）
 - `docs/deploy.md`：環境変数一覧（Production / Preview / Development）
 - `scripts/check-bundle-secrets.mjs`：`dist/` に `VITE_` 以外の環境変数値が含まれないことを検査（build 後に実行）
@@ -190,7 +190,7 @@
 | 7 | events / ai_generations の外部キー | `on delete set null`（ゲスト掃除・アカウント削除後もファネルを集計するため）。properties に個人情報を入れない |
 | 8 | ゲストの掃除条件 | 有効なセッションが無く、30 日以上アクセスのないゲストをデータの有無に関係なく削除 |
 | 9 | 日次クォータの日付 | JST |
-| 10 | service_role | anon / authenticated と同じく idea_ws の権限を REVOKE |
+| 10 | service_role | anon / authenticated と同じく scratch_prd の権限を REVOKE |
 | 11 | 本番のマイグレーション適用 | ~~Supabase CLI の `supabase db push --db-url`~~ → 冪等なマイグレーション（`supabase/migrations/init.sql` など日付なしの名前）を psql で名前順に流す（直接接続、postgres ロール）。本番 DB の作成前に、旧マイグレーション 8 本を最新状態の `init.sql` に統合した |
 | 12 | idea_ws_app のパスワード | マイグレーションではログイン不可で作成。本番は手作業で設定（docs/supabase-setup.md） |
 
