@@ -21,7 +21,6 @@ TEST_ORIGIN = "http://localhost:3000"
 os.environ.update(
     {
         "DATABASE_URL": make_conninfo(TEST_DATABASE_URL, user=APP_ROLE, password=DEFAULT_LOCAL_APP_PASSWORD),
-        "SESSION_TOKEN_PEPPER": "test-pepper",
         "ALLOWED_ORIGINS": TEST_ORIGIN,
         "COOKIE_SECURE": "false",
         "TRUST_PROXY_HEADERS": "false",

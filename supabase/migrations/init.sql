@@ -75,7 +75,7 @@ create table if not exists scratch_prd.password_credentials (
   updated_at timestamptz not null default now()
 );
 
--- token_hash / ip_hash はサーバー側 pepper による HMAC-SHA256。平文は保存しない
+-- token_hash / ip_hash は用途ごとに区別した SHA-256（backend/app/security.py）。平文は保存しない
 create table if not exists scratch_prd.sessions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references scratch_prd.users (id) on delete cascade,

@@ -42,7 +42,7 @@ Vercel（同一リポジトリ・同一ドメイン）
 | ユーザーデータ（projects, notes, prd_documents, prd_versions, workspace_preferences） | `scratch_prd` |
 | コンテンツ（sample_contents） | `scratch_prd`（デプロイ無しで初回体験を調整するため） |
 | グロース計測（events, ai_generations, api_usage） | `scratch_prd` |
-| 秘密情報（DB 接続文字列・API キー・pepper 等） | Vercel の環境変数のみ。フロントに渡してよいのは `VITE_` 接頭辞の公開値だけ |
+| 秘密情報（DB 接続文字列・API キー等） | Vercel の環境変数のみ。フロントに渡してよいのは `VITE_` 接頭辞の公開値だけ |
 | ブラウザ | セッション Cookie（httpOnly）のみ。旧 localStorage（`idea_workspace_*_v2`）は初回インポート後に削除する |
 
 ### ゲストと登録
@@ -64,7 +64,7 @@ Vercel（同一リポジトリ・同一ドメイン）
 - **`scratch_prd` を Supabase Data API（PostgREST）の Exposed schemas に追加しない。**
 - **RLS を無効化しない。** `scratch_prd` の全テーブルで RLS を有効にし、ポリシーはアプリ用ロール `idea_ws_app` 向けだけを作る（`anon` / `authenticated` / `service_role` 向けは作らない）。本番のバックエンドは `postgres.<project-ref>`（テーブルの所有者）で接続するため RLS は効かない。RLS と REVOKE はバックエンド以外の経路（Data API など）を塞ぐためのもので、認可は `user_id` 条件で守る。
 - **ユーザー配下データのクエリで `user_id` 条件を省略しない。** 他人のリソース ID を指定されたら 404 を返す（403 で存在を漏らさない）。
-- セッショントークン・ログイントークンを平文で DB に保存しない（HMAC ハッシュのみ）。IP アドレスを生で保存しない。
+- セッショントークン・ログイントークンを平文で DB に保存しない（ハッシュのみ）。IP アドレスを生で保存しない。ハッシュは `security._hash`（用途ごとに区別した SHA-256）。鍵付きの HMAC（pepper）にするかは、秘匿情報の扱いを決めてから見直す（後から変えると全セッションが無効になる）。
 - JWT をセッションに使わない。`localStorage` に認証情報を置かない。
 - 方針（本ファイル・`docs/migration-plan.md`）と矛盾する実装を独断で行わない。外部サービスの仕様（Vercel / Supabase / Google OAuth / Resend / Gemini）は実装前に最新の公式ドキュメントで確認する。
 
@@ -160,14 +160,14 @@ uv run ruff check backend api && uv run ruff format --check backend api && uv ru
 
 アカウント（Phase 5〜）:
 
-- 登録・ログイン・統合は `backend/app/services/accounts.py`、アカウント設定は `routers/account.py`、定期処理は `routers/cron.py`（`CRON_SECRET`）。
+- 登録・ログイン・統合は `backend/app/services/accounts.py`、アカウント設定は `routers/account.py`、定期処理は `routers/cron.py`（`CRON_SECRET`。任意で、未設定の間は 401 を返して何もしない）。
 - ログイン系は `rate_limit.enforce_rate_limit`（IP・メールアドレスごと、キーはハッシュ）を通す。失敗の文言でメールアドレスの有無を区別しない。
 - フロントのログイン中ユーザーは `useSession()`（`GuestGate` の context）。別ユーザーに切り替わったときはページを読み直す。
 
 認証・セッション（Phase 3〜）:
 
 - 初回アクセスで `GuestGate` が `/api/auth/me` を確認し、無ければ `POST /api/auth/guest` でゲストを作る（IP ごとの回数制限 `config.GUEST_CREATE_RATE_*`）。
-- Cookie は `iws_session`（ローカル）/ `__Host-iws_session`（`COOKIE_SECURE=true`）。トークンは DB に HMAC でのみ保存。
+- Cookie は `iws_session`（ローカル）/ `__Host-iws_session`（`COOKIE_SECURE=true`）。トークンは DB にハッシュでのみ保存。
 - 状態を変える API は `security.verify_origin`（`ALLOWED_ORIGINS`）を通す。ログインが必要な API は `sessions.CurrentUser` を受け取る。
 - Gemini など外部 API を待つエンドポイントでは `Db` ではなく `Pool` を受け取り、DB 接続は使う間だけ借りる（プール枯渇を防ぐ）。
 - API テストは `backend/tests/conftest.py` の `client` / `guest_client` を使う（終了時にデータを削除）。
@@ -184,7 +184,7 @@ Workspace API（Phase 4a〜）:
 - イベントは `backend/app/services/events.py` のホワイトリスト（`EVENT_SCHEMAS`）に追加してから使う。API で起きる出来事はサーバー側で `record_event`、画面上の操作だけ `src/services/analytics.ts` の `track`（`CLIENT_EVENTS`）。properties に個人情報・メモ本文を入れない。
 - 本番の画面（`dist/`）は Vercel の CDN が配信する。セキュリティヘッダー（CSP など）は API が `main.py`、画面が `vercel.json` の `headers`。外部のスクリプト・画像を足すときは両方の CSP を直す（`test_deploy.py` が一致を検証）。
 - 環境変数を足したら `docs/deploy.md` の表と `.env.example` を更新する。
-- `VERCEL_ENV=production` では `config.Settings` がローカル用の値（localhost の DB・短い pepper・`COOKIE_SECURE=false` など）を拒否して起動しない。`DATABASE_URL` が未設定でも起動しない（モックは廃止した）。
+- `VERCEL_ENV=production` では `config.Settings` がローカル用の値（localhost の DB・`COOKIE_SECURE=false` など）を拒否して起動しない。`DATABASE_URL` が未設定でも起動しない（モックは廃止した）。
 - セクションは廃止した。メモと PRD は別のエンティティで、サイドバーの「メモ」「PRD」タブにそれぞれ更新日時の降順で並ぶ。PRD は `source_note_ids` で生成元メモを参照する（メモを消しても PRD は残り、画面では「削除済み」と出す）。再生成は元の PRD を変えず、常に新しい PRD を作る。`generation_mode = 'unknown'` は旧データ（PRD セクションのメモ）から変換した PRD。
 - メモのタグはプロジェクト単位（`scratch_prd.tags` / `note_tags`）。名前は大文字小文字を区別せずユニーク（重複は 409 `tag_exists`）、色はパレットのキー（`src/config/tags.ts` と `config.TAG_COLORS`）。メモのタグは `PUT /api/notes/{id}/tags` で一覧ごと置き換え、メモの `updated_at` は変えない。PRD にはタグを付けない。
 - PRD 生成の入口は `PrdGeneratorModal` だけ（入力元は「メモから」と「テキストを貼り付け」。貼り付けた内容はメモにしてから使う）。初回の案内も同じダイアログを `isOnboarding` で開く。PRD 生成は `App.tsx` の `generatePrdFromNotes` に集約している。殴り書きの整形（`/api/structure-rough-note`）は廃止した（PRD 生成のプロンプトが整形を兼ねる）。

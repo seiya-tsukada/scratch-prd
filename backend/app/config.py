@@ -19,7 +19,6 @@ GEMINI_API_KEY_PLACEHOLDER = "MY_GEMINI_API_KEY"
 
 # 本番（VERCEL_ENV=production）で使ってはいけないローカル用の値
 LOCAL_DB_HOSTS = {"localhost", "127.0.0.1", "::1", "db", "db-test"}
-MIN_PRODUCTION_SECRET_CHARS = 32
 # DATABASE_URL が未設定のときのローカル（docker compose の db）の接続先
 LOCAL_DATABASE_URL = "postgresql://idea_ws_app:idea_ws_app@localhost:54322/postgres"
 
@@ -34,15 +33,14 @@ class Settings(BaseSettings):
     # ユーザーは postgres.<project-ref>。ローカルは idea_ws_app）。
     # 未設定ならローカルの LOCAL_DATABASE_URL（本番では未設定だと起動しない）
     database_url: str | None = None
-    # セッショントークン・IP をハッシュ化する HMAC の鍵。必須
-    session_token_pepper: SecretStr | None = None
     # 状態を変えるリクエストで許可する Origin（カンマ区切り）
     allowed_origins: str = "http://localhost:3000"
     # ローカル（http）では false にする。true なら Cookie 名に __Host- を付ける
     cookie_secure: bool = True
     # Vercel 上では true（x-forwarded-for を Vercel が上書きするため信頼できる）
     trust_proxy_headers: bool = False
-    # Vercel Cron が Authorization: Bearer で送る秘密（16 文字以上のランダム文字列）
+    # Vercel Cron が Authorization: Bearer で送る秘密（16 文字以上のランダム文字列）。
+    # 任意: 未設定の間は /api/cron/* がすべて 401 になり、定期処理は動かない
     cron_secret: SecretStr | None = None
     # Vercel が自動で設定するシステム環境変数（ドメインのみ、https:// なし）。プレビューの URL は毎回変わるため、
     # このデプロイ自身の URL を許可する Origin に自動で加える
@@ -56,18 +54,6 @@ class Settings(BaseSettings):
     def effective_database_url(self) -> str:
         return self.database_url or LOCAL_DATABASE_URL
 
-    @property
-    def pepper(self) -> str:
-        if self.session_token_pepper is None:
-            raise RuntimeError("SESSION_TOKEN_PEPPER が設定されていません")
-        return self.session_token_pepper.get_secret_value()
-
-    @model_validator(mode="after")
-    def require_pepper(self) -> Self:
-        if not self.session_token_pepper:
-            raise ValueError("SESSION_TOKEN_PEPPER を設定してください")
-        return self
-
     @model_validator(mode="after")
     def reject_local_settings_in_production(self) -> Self:
         """本番でローカル用の値のまま起動しない（設定漏れを起動時に検出する）"""
@@ -78,14 +64,12 @@ class Settings(BaseSettings):
             problems.append("DATABASE_URL が未設定です")
         elif urlparse(self.database_url).hostname in LOCAL_DB_HOSTS:
             problems.append("DATABASE_URL がローカルの DB を指しています")
-        if len(self.pepper) < MIN_PRODUCTION_SECRET_CHARS:
-            problems.append(f"SESSION_TOKEN_PEPPER は {MIN_PRODUCTION_SECRET_CHARS} 文字以上にしてください")
         if not self.cookie_secure:
             problems.append("COOKIE_SECURE は true にしてください")
         if not self.trust_proxy_headers:
             problems.append("TRUST_PROXY_HEADERS は true にしてください")
-        if not self.cron_secret or len(self.cron_secret.get_secret_value()) < 16:
-            problems.append("CRON_SECRET を 16 文字以上で設定してください")
+        if self.cron_secret and len(self.cron_secret.get_secret_value()) < 16:
+            problems.append("CRON_SECRET は 16 文字以上にしてください（使わないなら未設定にする）")
         if problems:
             raise ValueError("本番環境の設定に問題があります: " + " / ".join(problems))
         return self

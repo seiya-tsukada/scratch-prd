@@ -64,7 +64,6 @@ def test_vercel_entrypoint_exposes_app() -> None:
 PRODUCTION_ENV = {
     "VERCEL_ENV": "production",
     "DATABASE_URL": "postgresql://postgres.abcdef:secret@aws-0-ap-northeast-1.pooler.supabase.com:6543/postgres",
-    "SESSION_TOKEN_PEPPER": "p" * config.MIN_PRODUCTION_SECRET_CHARS,
     "COOKIE_SECURE": "true",
     "TRUST_PROXY_HEADERS": "true",
     "CRON_SECRET": "c" * 16,
@@ -78,16 +77,23 @@ def test_production_settings_are_accepted(monkeypatch: pytest.MonkeyPatch) -> No
     assert settings.vercel_env == "production"
 
 
+def test_production_settings_are_accepted_without_cron_secret(monkeypatch: pytest.MonkeyPatch) -> None:
+    """CRON_SECRET は任意（未設定の間は Cron のエンドポイントがすべて 401 になる）"""
+    for name, value in PRODUCTION_ENV.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setenv("CRON_SECRET", "")
+    assert not config.Settings().cron_secret
+
+
 @pytest.mark.parametrize(
     ("name", "value"),
     [
         ("DATABASE_URL", ""),
         ("DATABASE_URL", "postgresql://idea_ws_app:idea_ws_app@localhost:54322/postgres"),
         ("DATABASE_URL", "postgresql://idea_ws_app:idea_ws_app@db:5432/postgres"),
-        ("SESSION_TOKEN_PEPPER", "local-dev-pepper-change-me"),
         ("COOKIE_SECURE", "false"),
         ("TRUST_PROXY_HEADERS", "false"),
-        ("CRON_SECRET", ""),
+        ("CRON_SECRET", "short"),
     ],
 )
 def test_local_settings_are_rejected_in_production(monkeypatch: pytest.MonkeyPatch, name: str, value: str) -> None:
