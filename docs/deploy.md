@@ -64,7 +64,7 @@ Vercel の Project Settings → Environment Variables で、環境ごとに設�
 | 変数 | Production | Development（`.env`） | 説明 |
 |---|---|---|---|
 | `DATABASE_URL` | 本番 DB の Transaction pooler（ユーザー `idea_ws_app.<project-ref>`） | `postgresql://idea_ws_app:idea_ws_app@localhost:54322/postgres` | バックエンドの接続先（[supabase-setup.md](supabase-setup.md) §5） |
-| `DATABASE_URL_DIRECT` | **設定しない** | ローカルの直接接続 | マイグレーション専用（手元から `supabase db push` するときだけ使う） |
+| `DATABASE_URL_DIRECT` | **設定しない** | ローカルの直接接続 | マイグレーション・メンテナンス SQL 専用（手元から psql で流すときだけ使う） |
 | `SESSION_TOKEN_PEPPER` | 32 文字以上のランダムな文字列 | `.env.example` の値 | トークン・IP の HMAC 鍵。変えると全セッションが無効になる |
 | `ALLOWED_ORIGINS` | 本番ドメイン（例 `https://idea-workspace.example.com`） | `http://localhost:3000` | 状態を変える API を許可する Origin（カンマ区切り）。Vercel のデプロイ URL（`VERCEL_URL` など）は自動で追加される |
 | `COOKIE_SECURE` | `true` | `false` | `true` で Cookie 名が `__Host-iws_session` になり HSTS を付ける |

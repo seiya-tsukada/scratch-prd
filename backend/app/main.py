@@ -14,7 +14,7 @@ from psycopg import errors as pg_errors
 from backend.app import config
 from backend.app.db import create_pool
 from backend.app.mock import router as mock_router
-from backend.app.routers import account, ai, auth, cron, events, workspace
+from backend.app.routers import account, ai, auth, cron, events, health, workspace
 from backend.app.services.workspace_repo import ConflictError, LimitExceededError, NotFoundError, TagExistsError
 
 logger = logging.getLogger(__name__)
@@ -106,6 +106,7 @@ if config.get_settings().use_mock:
     logger.warning("MOCK mode: DB に接続せず固定のサンプルで応答します（DATABASE_URL 未設定または MOCK_BACKEND=true）")
     app.include_router(mock_router.router, prefix="/api")
 else:
+    app.include_router(health.router, prefix="/api")
     app.include_router(auth.router, prefix="/api")
     app.include_router(account.router, prefix="/api")
     app.include_router(cron.router, prefix="/api")

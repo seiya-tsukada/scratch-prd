@@ -18,20 +18,18 @@ Supabase は **マネージド Postgres としてのみ**使う（Supabase Auth�
 
 ## 3. マイグレーションと seed の適用
 
-[Supabase CLI](https://supabase.com/docs/guides/local-development/cli/getting-started) を使う。接続は**直接接続**（プーラーではない）で、`postgres` ロールで行う。
+`psql` で `supabase/migrations/*.sql`（名前順）と seed を流す。Supabase CLI の `supabase db push` は使わない（日付入りのファイル名を前提とし、適用履歴で管理するため）。
+マイグレーションは**冪等**（既にあるものは作らない）なので、デプロイのたびに全ファイルを流してよい。接続は**直接接続**（プーラーではない）で、`postgres` ロールで行う。
 
 ```bash
 # 直接接続の文字列: Project の Connect → Direct connection
 export DATABASE_URL_DIRECT='postgresql://postgres:<password>@db.<project-ref>.supabase.co:5432/postgres'
 
-supabase db push --db-url "$DATABASE_URL_DIRECT" --dry-run   # 適用されるマイグレーションを確認
-supabase db push --db-url "$DATABASE_URL_DIRECT"
-psql "$DATABASE_URL_DIRECT" -f supabase/seed.sql              # 初回のみ（何度実行しても重複しない）
+cat supabase/migrations/*.sql supabase/seed.sql | psql "$DATABASE_URL_DIRECT" -v ON_ERROR_STOP=1 -1
 ```
 
-- [ ] 適用前に CLI の最新ドキュメントで `db push` のオプション（`--db-url`, `--include-seed` など）を確認する
-- [ ] `--dry-run` で 3 つのマイグレーションが対象になっていることを確認してから適用する
-- [ ] seed を適用する
+- [ ] マイグレーションと seed を適用する（`-1` で 1 トランザクション。途中で失敗したら何も変わらない）
+- [ ] `psql "$DATABASE_URL_DIRECT" -f supabase/maintenance/row_counts.sql` でテーブルができていることを確認する
 - [ ] 直接接続が IPv6 のみで繋がらない場合は、Connect 画面の Session pooler（ポート 5432）の接続文字列を使う
 
 ## 4. アプリ用ロール `idea_ws_app` のパスワード設定
@@ -85,6 +83,8 @@ reset role;
 
 ## 7. 運用メモ
 
-- マイグレーションは**追記のみ**。マージ済みのファイルは書き換えない
+- マイグレーションは**冪等**に書く（`create table if not exists`、`create index if not exists`、`create or replace function / view / trigger`、`pg_constraint` などを見る `do` ブロック）。既存の DB にもう一度流しても壊れないこと（`backend/tests/db/test_migrations.py` が 2 回適用を検証する）
+- ファイル名に日付を入れない（例 `init.sql`）。名前順に流すので、新しいファイルは既存のファイルより後ろに来る名前にする
+- 手動の運用作業（行数の確認・期限切れの掃除・ユーザー削除・データの全削除など）は `supabase/maintenance/` の SQL を使う（README の「メンテナンス用 SQL」）
 - テーブルを追加するマイグレーションでは、RLS 有効化・`idea_ws_app` への GRANT・`idea_ws_app` 用ポリシーを同じファイルで行う（`backend/tests/db/test_privileges.py` が検出する）
 - ローカルでは `postgres` ロールで BYPASSRLS 付きロールを作れるが、Supabase 本番ではできない前提で設計している（ポリシー方式）

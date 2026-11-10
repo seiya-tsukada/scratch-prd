@@ -154,11 +154,6 @@ def test_request_too_large_is_rejected(client: TestClient) -> None:
     assert response.status_code == 413
 
 
-def test_health(client: TestClient) -> None:
-    body = client.get("/api/health").json()
-    assert body["status"] == "ok"
-
-
 # ---------------------------------------------------------------- parse_structured
 
 

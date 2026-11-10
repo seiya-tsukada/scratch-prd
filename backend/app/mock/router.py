@@ -52,7 +52,7 @@ def _read_only() -> HTTPException:
 
 @router.get("/health")
 async def health() -> dict[str, str]:
-    return {"status": "ok", "mode": "mock", "time": datetime.now(UTC).isoformat()}
+    return {"status": "ok", "mode": "mock", "db": "skipped", "time": datetime.now(UTC).isoformat()}
 
 
 @router.get("/auth/me", response_model_exclude_none=True)

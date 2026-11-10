@@ -92,18 +92,19 @@ backend/
     db.py                接続管理（psycopg 3）
     security.py          セッション・CSRF・トークンハッシュ
     models/              pydantic スキーマ
-    routers/             auth, workspace, ai, events, account, cron
+    routers/             health, auth, workspace, ai, events, account, cron
     services/            gemini, prompts, fallbacks, rate_limit, mailer, turnstile, samples
                          （Phase 3 時点: main.py, config.py, db.py, security.py, sessions.py, models/{ai,auth}.py,
                           routers/{ai,auth}.py, services/{gemini,prompts,fallbacks,turnstile,rate_limit,samples,ai_usage}.py）
                          （Phase 4a で追加: models/workspace.py, routers/workspace.py, services/{workspace_repo,legacy_import}.py）
-  scripts/               db_reset.py（ローカル DB の作り直し）
+  scripts/               db_migrate.py（ローカル DB へ冪等に適用）, db_reset.py（ローカル DB の作り直し）
   tests/                 AI API・プロンプト・フォールバックのテスト、db/（スキーマ・権限・関数のテスト）
 vercel.json              Vercel の設定（framework: vite、ビルド、rewrites、画面のヘッダー、Cron）
 api/index.py             Vercel Function の入口。backend.app.main の app を公開するだけ（api/ に .py を増やさない）
 scripts/                 check-bundle-secrets.mjs（ビルド成果物の秘密情報検査）
 .github/workflows/       ci.yml（lint / テスト / ビルド / 秘密情報検査）
-supabase/migrations/     SQL マイグレーション（Supabase CLI 形式）
+supabase/migrations/     SQL マイグレーション（冪等。日付なしの名前で名前順に psql で流す。supabase db push は使わない）
+supabase/maintenance/    メンテナンス用 SQL（手動で psql から実行。破壊的なものは -v confirm=yes 必須）
 supabase/seed.sql        sample_contents
 docker-compose.yml       ローカル / テスト用 Postgres（Supabase の Postgres イメージ）
 docs/                    migration-plan.md, supabase-setup.md, deploy.md（環境変数一覧とデプロイ手順）
@@ -120,10 +121,10 @@ docker compose だけで起動する場合（`docker/*.Dockerfile` はローカ�
 
 ```bash
 cp .env.example .env && docker compose up --build   # db → migrate → api(:8000) → web(:3000)
-npm run docker:db-reset                             # マイグレーション追加後など、開発用 DB を作り直す
+npm run docker:db-reset                             # 開発用 DB を空から作り直す（データは消える）
 ```
 
-- `migrate` は `db_reset --if-empty`。idea_ws が無ければ作成、最新なら何もしない、古ければ停止する（データを勝手に消さない）。
+- `migrate` は `db_migrate`。マイグレーションと seed を毎回冪等に適用する（データは消さない）。
 - コンテナ内の接続先・Cookie・Origin は `docker-compose.yml` の `api.environment` で固定している（`.env` より優先）。ポートは `.env` の `DB_PORT` などで変える。
 - 通知（メール送信など）はローカルでは再現しない。通知を実装するときも、ローカルでは送信せずログに出すだけにする。
 
@@ -144,12 +145,16 @@ DB（Phase 1〜）:
 
 ```bash
 docker compose up -d db db-test             # db（開発用 :54322）と db-test（pytest 用 :54323, tmpfs）
-uv run python -m backend.scripts.db_reset   # 開発用 DB の idea_ws を作り直す（マイグレーション + seed）
+uv run python -m backend.scripts.db_migrate # 開発用 DB にマイグレーション + seed を冪等に適用（データは残す）
+uv run python -m backend.scripts.db_reset   # 開発用 DB の idea_ws を作り直す（データは消える）
 uv run pytest                               # db-test を作り直してテスト
 uv run ruff check backend api && uv run ruff format --check backend api && uv run mypy
 ```
 
-- マイグレーションは `supabase/migrations/`（Supabase CLI 形式）、コンテンツの初期データは `supabase/seed.sql`。本番への適用手順は [docs/supabase-setup.md](docs/supabase-setup.md)。
+- マイグレーションは `supabase/migrations/`、コンテンツの初期データは `supabase/seed.sql`。本番への適用手順は [docs/supabase-setup.md](docs/supabase-setup.md)。
+- マイグレーションは**冪等**に書く（`if not exists` / `create or replace` / `pg_constraint` などを見る `do` ブロック）。ファイル名に日付を入れず、名前順で後ろに来る名前にする。`backend/tests/db/test_migrations.py` が 2 回適用でスキーマとデータが変わらないことを検証する。
+- 手動の運用作業は `supabase/maintenance/*.sql`（psql で実行）。データを消すものは `-v confirm=yes` が無ければ何もせず止める。
+- `GET /api/health` は DB に `select 1` を投げて接続を確認する（失敗時 503。モックでは `db: skipped`）。
 - ローカルの `idea_ws_app` のパスワードは `idea_ws_app`（`db_reset` が設定する。本番では手作業で設定）。
 - テーブルを追加するときは、同じマイグレーションで RLS 有効化・`idea_ws_app` への GRANT・`idea_ws_app` 用ポリシーを行う。
 
@@ -181,8 +186,8 @@ Workspace API（Phase 4a〜）:
 - モック（`backend/app/mock/`。DB に接続せず固定のサンプルを返す）は Supabase を用意するまでの一時的な仕組み。`MOCK_BACKEND=true`、または Vercel 上で `DATABASE_URL` が未設定のとき自動で有効になる（`config.Settings.use_mock`。`check:bundle` も同じ規則）。
 - 環境変数を足したら `docs/deploy.md` の表と `.env.example` を更新する。
 - `VERCEL_ENV=production` では `config.Settings` がローカル用の値（localhost の DB・テスト用 Turnstile キー・短い pepper・`COOKIE_SECURE=false` など）を拒否して起動しない。`check:bundle` も本番ビルドにテスト用サイトキーがあれば失敗する。
-- セクションは廃止した（`20261107000001_idea_ws_remove_sections.sql`）。メモと PRD は別のエンティティで、サイドバーの「メモ」「PRD」タブにそれぞれ更新日時の降順で並ぶ。PRD は `source_note_ids` で生成元メモを参照する（メモを消しても PRD は残り、画面では「削除済み」と出す）。再生成は元の PRD を変えず、常に新しい PRD を作る。`generation_mode = 'unknown'` は旧データ（PRD セクションのメモ）から変換した PRD。
-- メモのタグはプロジェクト単位（`idea_ws.tags` / `note_tags`、`20261108000001_idea_ws_note_tags.sql`）。名前は大文字小文字を区別せずユニーク（重複は 409 `tag_exists`）、色はパレットのキー（`src/config/tags.ts` と `config.TAG_COLORS`）。メモのタグは `PUT /api/notes/{id}/tags` で一覧ごと置き換え、メモの `updated_at` は変えない。PRD にはタグを付けない。
+- セクションは廃止した。メモと PRD は別のエンティティで、サイドバーの「メモ」「PRD」タブにそれぞれ更新日時の降順で並ぶ。PRD は `source_note_ids` で生成元メモを参照する（メモを消しても PRD は残り、画面では「削除済み」と出す）。再生成は元の PRD を変えず、常に新しい PRD を作る。`generation_mode = 'unknown'` は旧データ（PRD セクションのメモ）から変換した PRD。
+- メモのタグはプロジェクト単位（`idea_ws.tags` / `note_tags`）。名前は大文字小文字を区別せずユニーク（重複は 409 `tag_exists`）、色はパレットのキー（`src/config/tags.ts` と `config.TAG_COLORS`）。メモのタグは `PUT /api/notes/{id}/tags` で一覧ごと置き換え、メモの `updated_at` は変えない。PRD にはタグを付けない。
 - PRD 生成の入口は `PrdGeneratorModal` だけ（入力元は「メモから」と「テキストを貼り付け」。貼り付けた内容はメモにしてから使う）。初回の案内も同じダイアログを `isOnboarding` で開く。PRD 生成は `App.tsx` の `generatePrdFromNotes` に集約している。殴り書きの整形（`/api/structure-rough-note`）は廃止した（PRD 生成のプロンプトが整形を兼ねる）。
 - 再生成では PRD 本文を AI に渡さず、`src/utils/prdLoop.ts` の `buildPreviousPrd` で作った要約（`previousPrd`）を渡す。未決事項への回答はタイトルが「決定: 〜」のメモで、タイトルの形式（`decisionTitle`）で回答済みを判定している（Phase 8）。サーバー側の秘密は `scripts/check-bundle-secrets.mjs` の `SERVER_ONLY_ENV` にも足す。
 

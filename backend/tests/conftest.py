@@ -12,7 +12,7 @@ import os
 
 from psycopg.conninfo import make_conninfo
 
-from backend.scripts.db_reset import APP_ROLE, DEFAULT_LOCAL_APP_PASSWORD
+from backend.scripts.db_migrate import APP_ROLE, DEFAULT_LOCAL_APP_PASSWORD
 
 TEST_DATABASE_URL = os.environ.get("TEST_DATABASE_URL", "postgresql://postgres:postgres@localhost:54323/postgres")
 TEST_ORIGIN = "http://localhost:3000"

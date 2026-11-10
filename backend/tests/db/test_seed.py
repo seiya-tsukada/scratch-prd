@@ -6,7 +6,7 @@ from typing import Any
 
 import psycopg
 
-from backend.scripts.db_reset import SEED_FILE
+from backend.scripts.db_migrate import SEED_FILE
 
 
 def active_sample(conn: psycopg.Connection) -> dict[str, Any]:

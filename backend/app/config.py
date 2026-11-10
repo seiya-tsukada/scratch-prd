@@ -205,6 +205,9 @@ EVENTS_RATE_LIMIT_PER_SESSION = (300, 60 * 60)
 TURNSTILE_VERIFY_URL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
 TURNSTILE_TIMEOUT_SECONDS = 10
 
+# /api/health の DB 接続確認（select 1）で、プールから接続を借りるまで待つ秒数
+HEALTH_DB_TIMEOUT_SECONDS = 5
+
 USER_AGENT_MAX_CHARS = 500
 
 # フォールバック PRD で各メモから抜き出す本文の最大文字数
