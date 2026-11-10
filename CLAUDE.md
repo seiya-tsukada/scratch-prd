@@ -47,7 +47,7 @@ Vercel（同一リポジトリ・同一ドメイン）
 
 ### ゲストと登録
 
-- 初回アクセスで `POST /api/auth/guest`（Turnstile 必須）→ `users(is_guest=true)` を作成しサンプルを複製。データは最初から DB に保存する。
+- 初回アクセスで `POST /api/auth/guest`（IP ごとの回数制限あり。bot 対策の Turnstile は使わない）→ `users(is_guest=true)` を作成しサンプルを複製。データは最初から DB に保存する。
 - 登録は**メールアドレス + パスワード**（Phase 5。メールのマジックリンク・Google OAuth は保留）。**同じ users 行を昇格**させるのでデータ移行は不要。
 - 既存アカウントにログインしたとき、ゲストにデータがあれば確認のうえ統合（merge）か破棄（discard）してからログインする（`POST /api/auth/login` の `guestData`）。
 - 昇格・ログイン時はセッショントークンを再発行する。パスワードは Argon2id のハッシュのみ保存する。
@@ -66,7 +66,7 @@ Vercel（同一リポジトリ・同一ドメイン）
 - **ユーザー配下データのクエリで `user_id` 条件を省略しない。** 他人のリソース ID を指定されたら 404 を返す（403 で存在を漏らさない）。
 - セッショントークン・ログイントークンを平文で DB に保存しない（HMAC ハッシュのみ）。IP アドレスを生で保存しない。
 - JWT をセッションに使わない。`localStorage` に認証情報を置かない。
-- 方針（本ファイル・`docs/migration-plan.md`）と矛盾する実装を独断で行わない。外部サービスの仕様（Vercel / Supabase / Google OAuth / Turnstile / Resend / Gemini）は実装前に最新の公式ドキュメントで確認する。
+- 方針（本ファイル・`docs/migration-plan.md`）と矛盾する実装を独断で行わない。外部サービスの仕様（Vercel / Supabase / Google OAuth / Resend / Gemini）は実装前に最新の公式ドキュメントで確認する。
 
 ---
 
@@ -78,7 +78,7 @@ Vercel（同一リポジトリ・同一ドメイン）
 src/
   config/                定数・定義（api.ts は AI・認証 API の型、prd.ts は表示定義、legacyStorage.ts は旧 localStorage キー）
   services/              apiWorkspaceRepository.ts（Workspace API）, noteSaveQueue.ts（メモの自動保存）,
-                         legacyImport.ts（旧データの取り込み）, apiClient.ts, session.ts, turnstile.ts
+                         legacyImport.ts（旧データの取り込み）, apiClient.ts, session.ts
   components/ hooks/ utils/ types/
 ```
 
@@ -93,9 +93,9 @@ backend/
     security.py          セッション・CSRF・トークンハッシュ
     models/              pydantic スキーマ
     routers/             health, auth, workspace, ai, events, account, cron
-    services/            gemini, prompts, fallbacks, rate_limit, mailer, turnstile, samples
+    services/            gemini, prompts, fallbacks, rate_limit, mailer, samples
                          （Phase 3 時点: main.py, config.py, db.py, security.py, sessions.py, models/{ai,auth}.py,
-                          routers/{ai,auth}.py, services/{gemini,prompts,fallbacks,turnstile,rate_limit,samples,ai_usage}.py）
+                          routers/{ai,auth}.py, services/{gemini,prompts,fallbacks,rate_limit,samples,ai_usage}.py）
                          （Phase 4a で追加: models/workspace.py, routers/workspace.py, services/{workspace_repo,legacy_import}.py）
   scripts/               db_migrate.py（ローカル DB へ冪等に適用）, db_reset.py（ローカル DB の作り直し）
   tests/                 AI API・プロンプト・フォールバックのテスト、db/（スキーマ・権限・関数のテスト）
@@ -166,11 +166,11 @@ uv run ruff check backend api && uv run ruff format --check backend api && uv ru
 
 認証・セッション（Phase 3〜）:
 
-- 初回アクセスで `GuestGate` が `/api/auth/me` を確認し、無ければ Turnstile → `POST /api/auth/guest`。ローカルは Cloudflare 公式のテストキー（常に成功）を使う。
+- 初回アクセスで `GuestGate` が `/api/auth/me` を確認し、無ければ `POST /api/auth/guest` でゲストを作る（IP ごとの回数制限 `config.GUEST_CREATE_RATE_*`）。
 - Cookie は `iws_session`（ローカル）/ `__Host-iws_session`（`COOKIE_SECURE=true`）。トークンは DB に HMAC でのみ保存。
 - 状態を変える API は `security.verify_origin`（`ALLOWED_ORIGINS`）を通す。ログインが必要な API は `sessions.CurrentUser` を受け取る。
 - Gemini など外部 API を待つエンドポイントでは `Db` ではなく `Pool` を受け取り、DB 接続は使う間だけ借りる（プール枯渇を防ぐ）。
-- API テストは `backend/tests/conftest.py` の `client` / `guest_client` を使う（Turnstile はモック、終了時にデータを削除）。
+- API テストは `backend/tests/conftest.py` の `client` / `guest_client` を使う（終了時にデータを削除）。
 
 Workspace API（Phase 4a〜）:
 
@@ -184,7 +184,7 @@ Workspace API（Phase 4a〜）:
 - イベントは `backend/app/services/events.py` のホワイトリスト（`EVENT_SCHEMAS`）に追加してから使う。API で起きる出来事はサーバー側で `record_event`、画面上の操作だけ `src/services/analytics.ts` の `track`（`CLIENT_EVENTS`）。properties に個人情報・メモ本文を入れない。
 - 本番の画面（`dist/`）は Vercel の CDN が配信する。セキュリティヘッダー（CSP など）は API が `main.py`、画面が `vercel.json` の `headers`。外部のスクリプト・画像を足すときは両方の CSP を直す（`test_deploy.py` が一致を検証）。
 - 環境変数を足したら `docs/deploy.md` の表と `.env.example` を更新する。
-- `VERCEL_ENV=production` では `config.Settings` がローカル用の値（localhost の DB・テスト用 Turnstile キー・短い pepper・`COOKIE_SECURE=false` など）を拒否して起動しない。`check:bundle` も本番ビルドにテスト用サイトキーがあれば失敗する。`DATABASE_URL` が未設定でも起動しない（モックは廃止した）。
+- `VERCEL_ENV=production` では `config.Settings` がローカル用の値（localhost の DB・短い pepper・`COOKIE_SECURE=false` など）を拒否して起動しない。`DATABASE_URL` が未設定でも起動しない（モックは廃止した）。
 - セクションは廃止した。メモと PRD は別のエンティティで、サイドバーの「メモ」「PRD」タブにそれぞれ更新日時の降順で並ぶ。PRD は `source_note_ids` で生成元メモを参照する（メモを消しても PRD は残り、画面では「削除済み」と出す）。再生成は元の PRD を変えず、常に新しい PRD を作る。`generation_mode = 'unknown'` は旧データ（PRD セクションのメモ）から変換した PRD。
 - メモのタグはプロジェクト単位（`scratch_prd.tags` / `note_tags`）。名前は大文字小文字を区別せずユニーク（重複は 409 `tag_exists`）、色はパレットのキー（`src/config/tags.ts` と `config.TAG_COLORS`）。メモのタグは `PUT /api/notes/{id}/tags` で一覧ごと置き換え、メモの `updated_at` は変えない。PRD にはタグを付けない。
 - PRD 生成の入口は `PrdGeneratorModal` だけ（入力元は「メモから」と「テキストを貼り付け」。貼り付けた内容はメモにしてから使う）。初回の案内も同じダイアログを `isOnboarding` で開く。PRD 生成は `App.tsx` の `generatePrdFromNotes` に集約している。殴り書きの整形（`/api/structure-rough-note`）は廃止した（PRD 生成のプロンプトが整形を兼ねる）。
@@ -209,7 +209,7 @@ AI（Phase 2〜）:
 - 型ヒント必須（関数の引数・戻り値すべて）。`ruff`（lint/format）と `mypy --strict` 相当を通す。
 - API の入出力は pydantic モデルで定義する。フロントの型（`src/config/api.ts`, `src/types/index.ts`）と JSON のキー名（camelCase）を一致させる（pydantic の alias で変換）。
 - SQL は psycopg のパラメータバインドのみ。文字列連結で SQL を組まない。
-- テストは pytest。Gemini・メール・Turnstile・Google は必ずモック。DB を使うテストはローカル / CI の Postgres に対して実行する。
+- テストは pytest。Gemini・メール・Google は必ずモック。DB を使うテストはローカル / CI の Postgres に対して実行する。
 - 認可漏れを防ぐため、ユーザー配下データのリポジトリ関数は第 1 引数に `user_id` を必須で取る。
 
 ### TypeScript / React

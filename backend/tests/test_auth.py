@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from backend.app import config, security
 
-from .conftest import FakeTurnstile, login_guest
+from .conftest import login_guest
 
 COOKIE = config.SESSION_COOKIE_NAME
 
@@ -25,14 +25,13 @@ def session_rows(db: psycopg.Connection[Any]) -> list[tuple[Any, ...]]:
 
 
 def test_create_guest_sets_secure_cookie_and_stores_only_hash(
-    client: TestClient, db_admin: psycopg.Connection[Any], turnstile: FakeTurnstile
+    client: TestClient, db_admin: psycopg.Connection[Any]
 ) -> None:
-    response = client.post("/api/auth/guest", json={"turnstileToken": "tok"})
+    response = client.post("/api/auth/guest")
 
     assert response.status_code == 200
     user = response.json()["user"]
     assert user["isGuest"] is True
-    assert turnstile.calls == [("tok", "testclient")]
 
     set_cookie = response.headers["set-cookie"]
     assert set_cookie.startswith(f"{COOKIE}=")
@@ -54,7 +53,7 @@ def test_secure_cookie_uses_host_prefix(client: TestClient, monkeypatch: pytest.
     monkeypatch.setenv("COOKIE_SECURE", "true")
     config.get_settings.cache_clear()
 
-    response = client.post("/api/auth/guest", json={"turnstileToken": "tok"})
+    response = client.post("/api/auth/guest")
 
     set_cookie = response.headers["set-cookie"]
     assert set_cookie.startswith(f"{config.SECURE_SESSION_COOKIE_NAME}=")
@@ -62,39 +61,21 @@ def test_secure_cookie_uses_host_prefix(client: TestClient, monkeypatch: pytest.
 
 
 def test_create_guest_is_idempotent_with_existing_session(
-    client: TestClient, db_admin: psycopg.Connection[Any], turnstile: FakeTurnstile
+    client: TestClient, db_admin: psycopg.Connection[Any]
 ) -> None:
     first = login_guest(client)
-    second = client.post("/api/auth/guest", json={"turnstileToken": "tok"}).json()["user"]
+    second = client.post("/api/auth/guest").json()["user"]
 
     assert second["id"] == first["id"]
     assert db_admin.execute("select count(*) from scratch_prd.users").fetchone() == (1,)
-    assert len(turnstile.calls) == 1
-
-
-def test_create_guest_rejects_failed_turnstile(
-    client: TestClient, db_admin: psycopg.Connection[Any], turnstile: FakeTurnstile
-) -> None:
-    turnstile.ok = False
-    response = client.post("/api/auth/guest", json={"turnstileToken": "bad"})
-
-    assert response.status_code == 403
-    assert response.json()["detail"]["code"] == "turnstile_failed"
-    assert COOKIE not in client.cookies
-    assert db_admin.execute("select count(*) from scratch_prd.users").fetchone() == (0,)
-
-
-def test_create_guest_requires_token(client: TestClient) -> None:
-    assert client.post("/api/auth/guest", json={}).status_code == 422
-    assert client.post("/api/auth/guest", json={"turnstileToken": ""}).status_code == 422
 
 
 def test_create_guest_is_rate_limited_per_ip(client: TestClient) -> None:
     for _ in range(config.GUEST_CREATE_RATE_LIMIT):
-        assert client.post("/api/auth/guest", json={"turnstileToken": "tok"}).status_code == 200
+        assert client.post("/api/auth/guest").status_code == 200
         client.cookies.clear()
 
-    response = client.post("/api/auth/guest", json={"turnstileToken": "tok"})
+    response = client.post("/api/auth/guest")
     assert response.status_code == 429
     assert response.json()["detail"]["code"] == "rate_limited"
 
@@ -104,15 +85,6 @@ def test_rate_limit_key_does_not_contain_raw_ip(client: TestClient, db_admin: ps
     [(key,)] = db_admin.execute("select key from scratch_prd.rate_limit_buckets").fetchall()
     assert "testclient" not in key
     assert key == f"guest_create:{security.hash_ip('testclient').hex()}"
-
-
-def test_unconfigured_turnstile_fails_closed(client: TestClient) -> None:
-    from backend.app.main import app
-    from backend.app.services.turnstile import get_turnstile_verifier
-
-    app.dependency_overrides.pop(get_turnstile_verifier)
-    response = client.post("/api/auth/guest", json={"turnstileToken": "tok"})
-    assert response.status_code == 403
 
 
 # ---------------------------------------------------------------- me / logout
@@ -195,7 +167,7 @@ def test_session_touch_is_throttled(client: TestClient, db_admin: psycopg.Connec
 @pytest.mark.parametrize(
     ("path", "body"),
     [
-        ("/api/auth/guest", {"turnstileToken": "tok"}),
+        ("/api/auth/guest", None),
         ("/api/auth/logout", None),
         ("/api/generate-prd", {"notes": [{"id": "n", "content": "x"}]}),
     ],

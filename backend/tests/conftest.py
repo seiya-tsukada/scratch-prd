@@ -26,7 +26,6 @@ os.environ.update(
         "COOKIE_SECURE": "false",
         "TRUST_PROXY_HEADERS": "false",
         "GEMINI_API_KEY": "MY_GEMINI_API_KEY",
-        "TURNSTILE_SECRET_KEY": "",
         "CRON_SECRET": "test-cron-secret-0123456789",
     }
 )
@@ -41,18 +40,7 @@ from fastapi.testclient import TestClient
 
 from backend.app import config
 from backend.app.main import app
-from backend.app.services.turnstile import get_turnstile_verifier
 from backend.scripts.db_reset import reset_database
-
-
-class FakeTurnstile:
-    def __init__(self, ok: bool = True) -> None:
-        self.ok = ok
-        self.calls: list[tuple[str, str | None]] = []
-
-    async def verify(self, token: str, remote_ip: str | None) -> bool:
-        self.calls.append((token, remote_ip))
-        return self.ok
 
 
 @pytest.fixture(scope="session")
@@ -80,15 +68,9 @@ def db_admin(database_url: str) -> Iterator[psycopg.Connection[Any]]:
 
 
 @pytest.fixture
-def turnstile() -> FakeTurnstile:
-    return FakeTurnstile()
-
-
-@pytest.fixture
-def client(db_admin: psycopg.Connection[Any], turnstile: FakeTurnstile) -> Iterator[TestClient]:
+def client(db_admin: psycopg.Connection[Any]) -> Iterator[TestClient]:
     """ログインしていないクライアント（Origin は許可済み）"""
     config.get_settings.cache_clear()
-    app.dependency_overrides[get_turnstile_verifier] = lambda: turnstile
     with TestClient(app, headers={"Origin": TEST_ORIGIN}) as c:
         yield c
     app.dependency_overrides.clear()
@@ -96,7 +78,7 @@ def client(db_admin: psycopg.Connection[Any], turnstile: FakeTurnstile) -> Itera
 
 
 def login_guest(client: TestClient) -> dict[str, Any]:
-    response = client.post("/api/auth/guest", json={"turnstileToken": "token"})
+    response = client.post("/api/auth/guest")
     assert response.status_code == 200, response.text
     user: dict[str, Any] = response.json()["user"]
     return user

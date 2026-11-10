@@ -42,7 +42,7 @@ docker compose up --build                   # http://localhost:3000
 - `backend/` と `src/` の変更は自動で反映される。依存（`package.json` / `pyproject.toml`）を変えたら `docker compose up --build`。
 - マイグレーションは冪等なので、`docker compose up` のたびに `migrate` が最新の状態にする（データは消さない）。空の状態からやり直したいときは `npm run docker:db-reset`（ローカルのデータは消える）。
 - ほかのアプリとポートがぶつかる場合は `.env` の `DB_PORT` / `DB_TEST_PORT` / `API_PORT` / `WEB_PORT` を変える。
-- 通知（メール送信など）はローカルでは再現しない。Turnstile は Cloudflare 公式のテストキー（常に成功）を使う。
+- 通知（メール送信など）はローカルでは再現しない。
 
 ### API と画面をホストで動かす
 
@@ -92,7 +92,6 @@ db-test pytest 用の Postgres（tmpfs。止めると消える）
 |---|---|---|
 | DB | `db` コンテナ | Supabase の Postgres（Transaction pooler 経由） |
 | 画面の配信 | Vite の開発サーバー | `npm run build` の `dist/` を Vercel の CDN が配信 |
-| Turnstile | 公式のテストキー（常に成功） | 本番のキー |
 | Cookie | `iws_session`（http） | `__Host-iws_session`（https） |
 | 通知（メールなど） | 再現しない | （現在は未実装） |
 | Cron | 動かない（手動なら `curl -H "Authorization: Bearer $CRON_SECRET" localhost:8000/api/cron/cleanup`） | Vercel Cron |
@@ -223,7 +222,7 @@ docker compose up --build
 - PR に書かれた確認手順を http://localhost:3000 で行う。
 - PR にマイグレーションの変更があっても、`docker compose up` の `migrate` が手元のデータを残したまま適用する。
 - 確認が終わったら `git switch main` で戻る。PR のマイグレーションを入れた DB のままだと `main` で動かないことがあるので、そのときも `npm run docker:db-reset` で作り直す。
-- ローカルでは Turnstile はテストキー、通知は再現しない、AI は `GEMINI_API_KEY` が無ければ内蔵ジェネレータになる。これらに関わる変更は、本番デプロイ後の確認で見る。
+- ローカルでは通知は再現しない、AI は `GEMINI_API_KEY` が無ければ内蔵ジェネレータになる。これらに関わる変更は、本番デプロイ後の確認で見る。
 
 ### 3. マージと本番デプロイ
 

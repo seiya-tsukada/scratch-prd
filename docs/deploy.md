@@ -38,15 +38,12 @@ Vercel の Project Settings → Environment Variables で、環境ごとに設�
 | `ALLOWED_ORIGINS` | 本番ドメイン（例 `https://idea-workspace.example.com`） | `http://localhost:3000` | 状態を変える API を許可する Origin（カンマ区切り）。Vercel のデプロイ URL（`VERCEL_URL` など）は自動で追加される |
 | `COOKIE_SECURE` | `true` | `false` | `true` で Cookie 名が `__Host-iws_session` になり HSTS を付ける |
 | `TRUST_PROXY_HEADERS` | `true` | `false` | `x-forwarded-for` を信頼する（Vercel が上書きするため） |
-| `TURNSTILE_SECRET_KEY` | 本番ウィジェットの秘密鍵 | テスト用キー `1x0000000000000000000000000000000AA` | ゲスト作成時の bot 対策 |
-| `VITE_TURNSTILE_SITE_KEY` | 本番ウィジェットのサイトキー | テスト用キー `1x00000000000000000000AA` | ビルド時に埋め込まれる公開値 |
 | `CRON_SECRET` | 16 文字以上のランダム文字列 | 任意 | `GET /api/cron/cleanup` の認証 |
 | `GEMINI_API_KEY` | 任意 | 任意 | 未設定なら内蔵ジェネレータで応答（`usedFallback: true`） |
 | `GEMINI_MODEL` | 任意（既定 `gemini-3.8-flash`） | 任意 | |
 
 > Production（Vercel が `VERCEL_ENV=production` を設定する）では、次のどれかに当てはまると API が起動しない（ローカル用の設定のまま本番に出さないため）。
-> `DATABASE_URL` が未設定かローカル（localhost / db）・`SESSION_TOKEN_PEPPER` が 32 文字未満・`TURNSTILE_SECRET_KEY` が未設定かテスト用・`COOKIE_SECURE` / `TRUST_PROXY_HEADERS` が `true` でない・`CRON_SECRET` が 16 文字未満。
-> ビルドでも `VITE_TURNSTILE_SITE_KEY` が未設定かテスト用なら `check:bundle` が失敗する。
+> `DATABASE_URL` が未設定かローカル（localhost / db）・`SESSION_TOKEN_PEPPER` が 32 文字未満・`COOKIE_SECURE` / `TRUST_PROXY_HEADERS` が `true` でない・`CRON_SECRET` が 16 文字未満。
 
 ランダムな値の作り方:
 
@@ -62,10 +59,6 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 - [ ] [supabase-setup.md](supabase-setup.md) の手順を行う（マイグレーション・seed・Data API に `scratch_prd` を出さない）
 - [ ] `DATABASE_URL`（Connect 画面の Transaction pooler の接続文字列、ユーザー `postgres.<project-ref>`）を控える
 
-### Cloudflare Turnstile
-- [ ] ウィジェットを作成し、サイトキーと秘密鍵を控える
-- [ ] 許可するホスト名に本番ドメインを追加する
-
 ### Vercel
 - [ ] GitHub リポジトリを Import する。Framework Preset は **Vite**（`vercel.json` の `"framework": "vite"`）。Build Command / Output Directory も `vercel.json` の値（`npm run build && npm run check:bundle` / `dist`）が使われる
 - [ ] Node.js のバージョンを 24.x にする（Project Settings → Build and Deployment）
@@ -75,14 +68,14 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 
 ## 本番デプロイ後の確認
 
-マージ前の確認はローカルの docker compose で済ませておく（README の「開発フロー」）。ここでは本番でしか確認できないこと（ビルド、Turnstile の本番キー、https の Cookie・ヘッダー、Cron）も含めて確認する。
+マージ前の確認はローカルの docker compose で済ませておく（README の「開発フロー」）。ここでは本番でしか確認できないこと（ビルド、https の Cookie・ヘッダー、Cron）も含めて確認する。
 
 1. ビルドログで次を確認する
    - `npm ci && npm run build && npm run check:bundle` が成功し、「秘密情報の検査: 問題なし」が出ている
    - Python の依存が `pyproject.toml` / `uv.lock` からインストールされている
    - Functions に `api/index` があり、Runtime が Python 3.12 になっている
 2. `https://<デプロイ URL>/api/health` が `{"status":"ok",...}` を返す
-3. 画面を開き、ゲストとして始まる（Turnstile が表示され、サンプルのプロジェクトが出る）
+3. 画面を開き、ゲストとして始まる（サンプルのプロジェクトが出る）
 4. メモを作成・編集し、再読み込みしても残っている
 5. PRD を生成できる（`GEMINI_API_KEY` が無ければ「内蔵ジェネレータで作成しました」と表示される）
 6. 「登録してデータを保護」からメールアドレス + パスワードで登録できる。別のブラウザでログインして同じデータが見える

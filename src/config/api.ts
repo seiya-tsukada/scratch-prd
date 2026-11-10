@@ -66,10 +66,6 @@ export interface MeResponse {
   user: SessionUser;
 }
 
-export interface GuestRequest {
-  turnstileToken: string;
-}
-
 export interface RegisterRequest {
   email: string;
   password: string;
@@ -94,7 +90,6 @@ export interface GuestDataExistsDetail {
 export type ApiErrorCode =
   | 'unauthenticated'
   | 'invalid_origin'
-  | 'turnstile_failed'
   | 'rate_limited'
   | 'quota_exceeded'
   | 'email_taken'

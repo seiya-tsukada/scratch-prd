@@ -15,7 +15,6 @@ const SERVER_ONLY_ENV = [
   'DATABASE_URL_DIRECT',
   'SESSION_TOKEN_PEPPER',
   'GEMINI_API_KEY',
-  'TURNSTILE_SECRET_KEY',
   'CRON_SECRET',
 ];
 // 秘密ではない（短い・ありふれた）値は誤検知になるので除く
@@ -68,15 +67,6 @@ for (const file of listFiles(DIST)) {
   }
   for (const { name, regex } of PATTERNS) {
     if (regex.test(content)) problems.push(`${file}: ${name}らしき文字列が含まれています`);
-  }
-}
-
-// 本番のビルドに Turnstile のテスト用サイトキー（1x / 2x / 3x + 0 の並び）を埋め込まない
-const TURNSTILE_TEST_SITE_KEY = /^[123]x0{20}[A-Z]{2}$/;
-if (process.env.VERCEL_ENV === 'production') {
-  const siteKey = process.env.VITE_TURNSTILE_SITE_KEY ?? '';
-  if (!siteKey || TURNSTILE_TEST_SITE_KEY.test(siteKey)) {
-    problems.push('VITE_TURNSTILE_SITE_KEY が未設定、またはテスト用の値です（本番のビルド）');
   }
 }
 

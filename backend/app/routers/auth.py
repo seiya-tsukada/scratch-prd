@@ -2,24 +2,20 @@
 
 from __future__ import annotations
 
-from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 
 from backend.app import config, security
 from backend.app.db import Conn, Db
-from backend.app.models.auth import GuestRequest, LoginRequest, MeResponse, MeUser, RegisterRequest
+from backend.app.models.auth import LoginRequest, MeResponse, MeUser, RegisterRequest
 from backend.app.services import accounts
 from backend.app.services.events import record_event
 from backend.app.services.rate_limit import consume_rate_limit, enforce_rate_limit
 from backend.app.services.samples import copy_active_sample
-from backend.app.services.turnstile import TurnstileVerifier, get_turnstile_verifier
 from backend.app.sessions import CurrentUser, OptionalUser, SessionUser, create_session, revoke_session, session_ttl
 
 router = APIRouter(prefix="/auth", dependencies=[Depends(security.verify_origin)])
-
-Turnstile = Annotated[TurnstileVerifier, Depends(get_turnstile_verifier)]
 
 
 def me_response(user: SessionUser) -> MeResponse:
@@ -35,9 +31,7 @@ def me_response(user: SessionUser) -> MeResponse:
 
 
 @router.post("/guest", response_model_exclude_none=True)
-async def create_guest(
-    body: GuestRequest, request: Request, response: Response, db: Db, existing: OptionalUser, turnstile: Turnstile
-) -> MeResponse:
+async def create_guest(request: Request, response: Response, db: Db, existing: OptionalUser) -> MeResponse:
     """ゲストユーザーを作り、サンプルを複製してセッションを発行する。既にセッションがあればそのユーザーを返す"""
     if existing is not None:
         return me_response(existing)
@@ -50,9 +44,6 @@ async def create_guest(
         )
         if not allowed:
             raise HTTPException(status_code=429, detail={"code": "rate_limited"})
-
-    if not await turnstile.verify(body.turnstile_token, ip):
-        raise HTTPException(status_code=403, detail={"code": "turnstile_failed"})
 
     async with db.transaction():
         cur = await db.execute("insert into scratch_prd.users (is_guest) values (true) returning id")
