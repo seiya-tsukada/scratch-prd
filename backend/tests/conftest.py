@@ -74,6 +74,7 @@ class SentMail:
     to: str
     subject: str
     text: str
+    html: str | None = None
 
 
 # テスト中に送られたメール（mailer.send_email を置き換えて記録する。外部には送らない）
@@ -82,8 +83,8 @@ SENT_MAILS: list[SentMail] = []
 
 @pytest.fixture(autouse=True)
 def outbox(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[SentMail]]:
-    async def fake_send_email(to: str, subject: str, text: str) -> None:
-        SENT_MAILS.append(SentMail(to, subject, text))
+    async def fake_send_email(to: str, subject: str, text: str, html: str | None = None) -> None:
+        SENT_MAILS.append(SentMail(to, subject, text, html))
 
     SENT_MAILS.clear()
     monkeypatch.setattr(mailer, "send_email", fake_send_email)

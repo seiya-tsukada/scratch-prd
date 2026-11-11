@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import hmac
+import html
 import secrets
 from dataclasses import dataclass
 from typing import Literal
@@ -16,8 +17,6 @@ from backend.app.db import Conn
 from backend.app.services import mailer
 
 Purpose = Literal["register", "login"]
-
-PURPOSE_LABELS: dict[Purpose, str] = {"register": "アカウント登録", "login": "ログイン"}
 
 
 class VerificationExpiredError(Exception):
@@ -84,17 +83,75 @@ async def revoke(conn: Conn, verification_token: str) -> None:
     )
 
 
-async def send(to: str, purpose: Purpose, code: str) -> None:
+@dataclass(frozen=True)
+class _MailCopy:
+    greeting: str  # {name} {app} を埋める
+    instruction: str  # {screen} {minutes} を埋める
+    screen: str
+    ignore: str
+
+
+MAIL_COPIES: dict[Purpose, _MailCopy] = {
+    "register": _MailCopy(
+        greeting="{name} さん、{app} へのご登録ありがとうございます。",
+        instruction="{screen}に次の確認コードを入力してください。コードの有効期限は{minutes}分です。",
+        screen="登録画面",
+        ignore="心当たりがない場合は、このメールを破棄してください。アカウントは有効になりません。",
+    ),
+    "login": _MailCopy(
+        greeting="{name} さん、{app} へのログインを受け付けました。",
+        instruction="{screen}に次の確認コードを入力してください。コードの有効期限は{minutes}分です。",
+        screen="ログイン画面",
+        ignore="心当たりがない場合は、このメールを破棄してください。第三者にコードを伝えないでください。",
+    ),
+}
+
+
+def build_mail(to: str, purpose: Purpose, code: str) -> tuple[str, str, str]:
+    """件名・テキスト本文・HTML 本文を返す。宛名はメールアドレスの @ より前"""
+    copy = MAIL_COPIES[purpose]
+    app = config.APP_NAME
     minutes = int(config.EMAIL_CODE_TTL.total_seconds() // 60)
-    label = PURPOSE_LABELS[purpose]
-    subject = f"{config.APP_NAME} の確認コード"
-    text = (
-        f"{config.APP_NAME} の{label}の確認コードです。\n\n"
-        f"    {code}\n\n"
-        f"画面に戻って、このコードを入力してください。有効期限は{minutes}分です。\n"
-        "心当たりがない場合は、このメールを破棄してください。第三者にコードを伝えないでください。\n"
+    greeting = copy.greeting.format(name=to.split("@", 1)[0], app=app)
+    instruction = copy.instruction.format(screen=copy.screen, minutes=minutes)
+    footer = f"このメールは {app} から自動送信されています。"
+
+    subject = f"【{app}】確認コード: {code}"
+    # コードは単独の行に置く（テストの last_code もこの形で取り出す）
+    text = f"{app}\n\n確認コード\n\n{greeting}\n\n{instruction}\n\n    {code}\n\n{copy.ignore}\n\n{footer}\n"
+
+    e = html.escape
+    font = "-apple-system,BlinkMacSystemFont,'Hiragino Sans','Noto Sans JP',sans-serif"
+    p = "margin:0 0 20px;font-size:15px;line-height:1.7;color:#1f1f1f"
+    code_box = (
+        "display:inline-block;padding:18px 32px;background:#f3f3f3;border-radius:8px;"
+        "font-family:Menlo,Consolas,monospace;font-size:32px;font-weight:700;letter-spacing:8px;color:#1f1f1f"
     )
-    await mailer.send_email(to, subject, text)
+    html_body = f"""<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width"></head>
+<body style="margin:0;padding:0;background:#ffffff">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#ffffff">
+<tr><td align="center" style="padding:32px 16px">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;font-family:{font}">
+<tr><td style="padding:0 0 32px;font-size:18px;font-weight:700;color:#1f1f1f">{e(app)}</td></tr>
+<tr><td style="padding:0 0 20px;font-size:22px;font-weight:700;color:#1f1f1f">確認コード</td></tr>
+<tr><td><p style="{p}">{e(greeting)}</p><p style="{p}">{e(instruction)}</p></td></tr>
+<tr><td style="padding:4px 0 28px">
+<div style="{code_box}">{e(code)}</div>
+</td></tr>
+<tr><td><p style="{p}">{e(copy.ignore)}</p></td></tr>
+<tr><td style="padding:16px 0 0;font-size:13px;color:#777777">{e(footer)}</td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>
+"""
+    return subject, text, html_body
+
+
+async def send(to: str, purpose: Purpose, code: str) -> None:
+    subject, text, html_body = build_mail(to, purpose, code)
+    await mailer.send_email(to, subject, text, html_body)
 
 
 async def check(conn: Conn, purpose: Purpose, verification_token: str, code: str) -> Verification:
