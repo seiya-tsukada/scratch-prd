@@ -29,7 +29,7 @@ import {
   toGenerationMode,
 } from '../config/prd';
 import { getFirstLineText, getNoteDisplayTitle } from '../utils/note';
-import { ONBOARDING_EXAMPLE } from '../utils/onboarding';
+import { PASTE_EXAMPLE } from '../utils/pasteExample';
 import { getPrdInputLimitError } from '../utils/aiLimits';
 import { generationStage } from '../utils/generationStage';
 
@@ -78,8 +78,6 @@ interface PrdGeneratorModalProps {
   basePrdId?: string | null;
   /** 開いたときの入力元（再生成のときは常に notes） */
   initialSource?: PrdSource;
-  /** 初回の案内として開く（見出しと「スキップ」の表示が変わる） */
-  isOnboarding?: boolean;
   /** generated は生成して閉じたか（false はキャンセル） */
   onClose: (generated: boolean) => void;
   onGenerate: (params: PrdGenerateParams) => Promise<void>;
@@ -93,7 +91,6 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
   projectName,
   basePrdId,
   initialSource = 'notes',
-  isOnboarding = false,
   onClose,
   onGenerate,
   onGenerateFromText,
@@ -222,12 +219,10 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-zinc-900 dark:text-zinc-100">
-                {isOnboarding ? 'ようこそ！ 最初の PRD を作りましょう' : 'AIによるPRD（要件定義書）生成'}
+                AIによるPRD（要件定義書）生成
               </h2>
               <p className="text-xs text-zinc-500 dark:text-zinc-400">
-                {isOnboarding
-                  ? '思いつきを書くだけで、AI が開発に使える要件定義書（PRD）にまとめます。'
-                  : 'メモの断片や貼り付けたテキストから、実装可能な構造化PRDを自動構築します'}
+                メモの断片や貼り付けたテキストから、実装可能な構造化PRDを自動構築します
               </p>
             </div>
           </div>
@@ -280,14 +275,12 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
                 <div className="flex items-center gap-2">
                   <StepBadge step={1} />
                   <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200">
-                    {isOnboarding
-                      ? '作りたいもの・困っていること・思いついたことを、そのまま書いてください'
-                      : 'テキストを貼り付け（メモとして保存されます）'}
+                    テキストを貼り付け（メモとして保存されます）
                   </span>
                 </div>
                 <button
                   type="button"
-                  onClick={() => setRawContent(ONBOARDING_EXAMPLE)}
+                  onClick={() => setRawContent(PASTE_EXAMPLE)}
                   className="flex items-center gap-1 text-[11px] text-indigo-600 dark:text-indigo-400 hover:underline shrink-0"
                 >
                   <ClipboardPaste className="w-3 h-3" />
@@ -499,7 +492,7 @@ export const PrdGeneratorModal: React.FC<PrdGeneratorModalProps> = ({
               disabled={isGenerating}
               className="px-4 py-2 rounded-lg text-xs font-medium text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
             >
-              {isOnboarding ? 'スキップ' : 'キャンセル'}
+              キャンセル
             </button>
             <button
               type="button"

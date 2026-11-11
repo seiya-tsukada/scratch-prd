@@ -11,6 +11,8 @@ interface AuthDialogProps {
   initialMode: AuthMode;
   isGuest: boolean;
   onClose: () => void;
+  /** 登録の直前に行う準備（セッションが無い初回画面では、昇格させるゲストを先に作る） */
+  prepareRegister?: () => Promise<void>;
   /** 登録後も同じユーザー・同じデータのまま */
   onRegistered: (user: SessionUser) => void;
   /** 別のユーザーに切り替わったので、ワークスペースを読み直す */
@@ -21,7 +23,7 @@ const inputClass =
   'w-full px-3 py-2 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm text-zinc-900 dark:text-zinc-100 outline-none focus:border-indigo-500';
 
 /** メールアドレス + パスワードの登録・ログイン。ゲストにデータがあれば統合するかを確認する */
-export const AuthDialog: React.FC<AuthDialogProps> = ({ initialMode, isGuest, onClose, onRegistered, onLoggedIn }) => {
+export const AuthDialog: React.FC<AuthDialogProps> = ({ initialMode, isGuest, onClose, prepareRegister, onRegistered, onLoggedIn }) => {
   const [mode, setMode] = useState<AuthMode>(initialMode);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -54,7 +56,10 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({ initialMode, isGuest, on
         setError('確認用のパスワードが一致しません。');
         return;
       }
-      void run(async () => onRegistered(await register({ email, password, displayName: displayName || undefined })));
+      void run(async () => {
+        await prepareRegister?.();
+        onRegistered(await register({ email, password, displayName: displayName || undefined }));
+      });
     } else {
       void run(async () => {
         await login({ email, password });
