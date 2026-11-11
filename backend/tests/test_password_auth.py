@@ -11,18 +11,42 @@ from fastapi.testclient import TestClient
 
 from backend.app import config
 
-from .conftest import login_guest
+from .conftest import SENT_MAILS, last_code, login_guest
 
 PASSWORD = "correct horse battery"
 COOKIE = config.SESSION_COOKIE_NAME
 
 
-def register(client: TestClient, email: str = "alice@example.com", password: str = PASSWORD, **extra: Any) -> Any:
-    return client.post("/api/auth/register", json={"email": email, "password": password, **extra})
+def start_register(client: TestClient, email: str = "alice@example.com", password: str = PASSWORD) -> Any:
+    return client.post("/api/auth/register", json={"email": email, "password": password})
+
+
+def register(client: TestClient, email: str = "alice@example.com", password: str = PASSWORD) -> Any:
+    """登録の 2 段階（メールに届いたコードを入力する）まで行う。1 段階目で失敗したらその応答を返す"""
+    started = start_register(client, email, password)
+    if started.status_code != 200:
+        return started
+    body = started.json()
+    return client.post(
+        "/api/auth/register/verify",
+        json={"verificationId": body["verificationId"], "code": last_code(body["email"])},
+    )
+
+
+def start_login(client: TestClient, email: str = "alice@example.com", password: str = PASSWORD) -> Any:
+    return client.post("/api/auth/login", json={"email": email, "password": password})
 
 
 def login(client: TestClient, email: str = "alice@example.com", password: str = PASSWORD, **extra: Any) -> Any:
-    return client.post("/api/auth/login", json={"email": email, "password": password, **extra})
+    """ログインの 2 段階（メールに届いたコードを入力する）まで行う。extra は 2 段階目に渡す（guestData）"""
+    started = start_login(client, email, password)
+    if started.status_code != 200:
+        return started
+    body = started.json()
+    return client.post(
+        "/api/auth/login/verify",
+        json={"verificationId": body["verificationId"], "code": last_code(body["email"]), **extra},
+    )
 
 
 def notes_of(client: TestClient) -> list[str]:
@@ -40,7 +64,7 @@ def add_note(client: TestClient, content: str) -> None:
 def registered(guest_client: TestClient) -> TestClient:
     """alice@example.com として登録済み（ゲスト時代のメモ「alice のメモ」を持つ）"""
     add_note(guest_client, "alice のメモ")
-    assert register(guest_client, display_name="Alice").status_code == 200
+    assert register(guest_client).status_code == 200
     return guest_client
 
 
@@ -54,14 +78,13 @@ def test_register_promotes_same_user_and_keeps_data(
     add_note(guest_client, "ゲストのメモ")
     old_token = guest_client.cookies[COOKIE]
 
-    response = register(guest_client, email="  Alice@Example.COM ", display_name="  Alice ")
+    response = register(guest_client, email="  Alice@Example.COM ")
 
     assert response.status_code == 200
     assert response.json()["user"] == {
         "id": guest_id,
         "isGuest": False,
         "email": "alice@example.com",
-        "displayName": "Alice",
         "onboardingDone": False,
     }
     # セッションは作り直され、古いトークンは使えない
@@ -122,15 +145,12 @@ def test_register_requires_session(client: TestClient) -> None:
     assert register(client).status_code == 401
 
 
-def test_register_is_rate_limited_per_ip(client: TestClient, make_client: Any) -> None:
+def test_register_is_rate_limited_per_ip(guest_client: TestClient) -> None:
+    """登録の開始（確認コードの送信。再送を含む）を IP ごとに数える"""
     limit = config.REGISTER_RATE_LIMIT_PER_IP[0]
     for i in range(limit):
-        c = make_client()
-        login_guest(c)
-        assert register(c, email=f"user{i}@example.com").status_code == 200
-    c = make_client()
-    login_guest(c)
-    assert register(c, email="one-more@example.com").status_code == 429
+        assert start_register(guest_client, email=f"user{i}@example.com").status_code == 200
+    assert start_register(guest_client, email="one-more@example.com").status_code == 429
 
 
 # ---------------------------------------------------------------- ログイン
@@ -323,6 +343,126 @@ def test_rehash_on_login_when_parameters_change(
     assert login(make_client()).status_code == 200
     after = db_admin.execute("select password_hash from scratch_prd.password_credentials").fetchone()
     assert before != after
+
+
+# ---------------------------------------------------------------- メールの確認コード（2 段階目）
+
+
+def verify(client: TestClient, purpose: str, verification_id: str, code: str, **extra: Any) -> Any:
+    return client.post(f"/api/auth/{purpose}/verify", json={"verificationId": verification_id, "code": code, **extra})
+
+
+def wrong_code(code: str) -> str:
+    return f"{(int(code) + 1) % 10**config.EMAIL_CODE_DIGITS:0{config.EMAIL_CODE_DIGITS}d}"
+
+
+def test_register_start_sends_code_and_keeps_guest(guest_client: TestClient, db_admin: psycopg.Connection[Any]) -> None:
+    response = start_register(guest_client)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["email"] == "alice@example.com"
+    assert body["codeLength"] == config.EMAIL_CODE_DIGITS
+    assert body["expiresInSeconds"] == int(config.EMAIL_CODE_TTL.total_seconds())
+    assert [m.to for m in SENT_MAILS] == ["alice@example.com"]
+    code = last_code("alice@example.com")
+    # まだ登録されていない
+    assert guest_client.get("/api/auth/me").json()["user"]["isGuest"] is True
+    # コード・確認 ID・パスワードは平文で保存しない
+    stored = str(db_admin.execute("select * from scratch_prd.email_verification_codes").fetchall())
+    assert code not in stored and body["verificationId"] not in stored and PASSWORD not in stored
+
+
+def test_wrong_code_is_rejected_and_attempts_are_limited(guest_client: TestClient) -> None:
+    started = start_register(guest_client).json()
+    code = last_code("alice@example.com")
+
+    for _ in range(config.EMAIL_CODE_MAX_ATTEMPTS):
+        response = verify(guest_client, "register", started["verificationId"], wrong_code(code))
+        assert response.status_code == 400
+        assert response.json()["detail"]["code"] == "invalid_code"
+    # 上限に達したら、正しいコードでも使えない
+    response = verify(guest_client, "register", started["verificationId"], code)
+    assert response.json()["detail"]["code"] == "verification_expired"
+    assert guest_client.get("/api/auth/me").json()["user"]["isGuest"] is True
+
+
+def test_code_is_single_use(registered: TestClient, make_client: Any) -> None:
+    other = make_client()
+    started = start_login(other).json()
+    code = last_code("alice@example.com")
+    assert verify(other, "login", started["verificationId"], code).status_code == 200
+    assert verify(other, "login", started["verificationId"], code).json()["detail"]["code"] == "verification_expired"
+
+
+def test_expired_code_is_rejected(registered: TestClient, make_client: Any, db_admin: psycopg.Connection[Any]) -> None:
+    other = make_client()
+    started = start_login(other).json()
+    db_admin.execute("update scratch_prd.email_verification_codes set expires_at = now() - interval '1 second'")
+    response = verify(other, "login", started["verificationId"], last_code("alice@example.com"))
+    assert response.json()["detail"]["code"] == "verification_expired"
+
+
+def test_resend_invalidates_previous_code(guest_client: TestClient) -> None:
+    first = start_register(guest_client).json()
+    first_code = last_code("alice@example.com")
+    second = start_register(guest_client).json()
+
+    assert verify(guest_client, "register", first["verificationId"], first_code).status_code == 400
+    assert verify(guest_client, "register", second["verificationId"], last_code("alice@example.com")).status_code == 200
+
+
+def test_register_code_cannot_be_used_by_another_guest(guest_client: TestClient, make_client: Any) -> None:
+    started = start_register(guest_client).json()
+    attacker = make_client()
+    login_guest(attacker)
+    response = verify(attacker, "register", started["verificationId"], last_code("alice@example.com"))
+    assert response.json()["detail"]["code"] == "verification_expired"
+    assert attacker.get("/api/auth/me").json()["user"]["isGuest"] is True
+
+
+def test_login_code_cannot_be_used_for_register(registered: TestClient, make_client: Any) -> None:
+    other = make_client()
+    login_guest(other)
+    started = start_login(other).json()
+    response = verify(other, "register", started["verificationId"], last_code("alice@example.com"))
+    assert response.json()["detail"]["code"] == "verification_expired"
+
+
+def test_login_start_does_not_log_in(registered: TestClient, make_client: Any) -> None:
+    other = make_client()
+    assert start_login(other).status_code == 200
+    assert other.get("/api/auth/me").status_code == 401
+
+
+def test_login_with_wrong_password_sends_no_mail(registered: TestClient, make_client: Any) -> None:
+    SENT_MAILS.clear()
+    assert start_login(make_client(), password="wrong password!").status_code == 401
+    assert SENT_MAILS == []
+
+
+def test_code_sending_is_rate_limited_per_email(registered: TestClient, make_client: Any) -> None:
+    other = make_client()
+    limit = config.EMAIL_CODE_SEND_RATE_LIMIT_PER_EMAIL[0]
+    # 登録時に 1 回送っている
+    for _ in range(limit - 1):
+        assert start_login(other).status_code == 200
+    assert start_login(other).status_code == 429
+
+
+def test_mail_failure_returns_503_and_discards_code(
+    guest_client: TestClient, db_admin: psycopg.Connection[Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from backend.app.services import mailer
+
+    async def failing_send(to: str, subject: str, text: str) -> None:
+        raise mailer.MailError("down")
+
+    monkeypatch.setattr(mailer, "send_email", failing_send)
+    response = start_register(guest_client)
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "email_unavailable"
+    assert db_admin.execute("select count(*) from scratch_prd.email_verification_codes").fetchone() == (0,)
 
 
 # ---------------------------------------------------------------- アカウント設定

@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     # Vercel Cron が Authorization: Bearer で送る秘密（16 文字以上のランダム文字列）。
     # 任意: 未設定の間は /api/cron/* がすべて 401 になり、定期処理は動かない
     cron_secret: SecretStr | None = None
+    # Resend の API キー（確認コードのメール送信）。ローカル（VERCEL_ENV 未設定）では設定があっても送信せず、
+    # コードをログに出すだけ。プレビュー・本番で未設定なら確認コードを送れず 503（email_unavailable）
+    resend_api_key: SecretStr | None = None
+    # 送信元（例 "Scratch prd <info@example.com>"）。Resend で認証済みのドメインのアドレスにする
+    # （未認証のドメインからは送れない）。プレビュー・本番で未設定なら確認コードを送れず 503（email_unavailable）
+    mail_from: str | None = None
     # Vercel が自動で設定するシステム環境変数（ドメインのみ、https:// なし）。プレビューの URL は毎回変わるため、
     # このデプロイ自身の URL を許可する Origin に自動で加える
     vercel_url: str | None = None
@@ -78,6 +84,15 @@ class Settings(BaseSettings):
     def effective_gemini_api_key(self) -> str | None:
         key = self.gemini_api_key
         return key if key and key != GEMINI_API_KEY_PLACEHOLDER else None
+
+    @property
+    def effective_resend_api_key(self) -> str | None:
+        key = self.resend_api_key.get_secret_value().strip() if self.resend_api_key else ""
+        return key or None
+
+    @property
+    def effective_mail_from(self) -> str | None:
+        return (self.mail_from or "").strip() or None
 
     @property
     def allowed_origin_list(self) -> list[str]:
@@ -156,7 +171,7 @@ AI_DAILY_QUOTAS: dict[str, dict[AiKind, int]] = {
 GUEST_CREATE_RATE_LIMIT = 10
 GUEST_CREATE_RATE_WINDOW_SECONDS = 3600
 
-# メールアドレス + パスワードのログイン（メールアドレスの確認は行わない）
+# メールアドレス + パスワードのログイン。登録・ログインのどちらもメールの確認コードで 2 段階目を確かめる
 MAX_EMAIL_CHARS = 254
 MIN_PASSWORD_CHARS = 10
 MAX_PASSWORD_CHARS = 128
@@ -164,7 +179,21 @@ MAX_DISPLAY_NAME_CHARS = 100
 # 総当たり対策（回数, 秒）。キーは IP / メールアドレスの HMAC
 LOGIN_RATE_LIMIT_PER_IP = (10, 15 * 60)
 LOGIN_RATE_LIMIT_PER_EMAIL = (5, 15 * 60)
-REGISTER_RATE_LIMIT_PER_IP = (5, 60 * 60)
+# 登録の開始（確認コードの送信。再送を含む）
+REGISTER_RATE_LIMIT_PER_IP = (10, 60 * 60)
+
+# メールの確認コード（2 段階目）
+EMAIL_CODE_DIGITS = 6
+EMAIL_CODE_TTL = timedelta(minutes=10)
+# 1 つのコードに対して入力できる回数（正解を含む）。超えたらコードの再送が必要
+EMAIL_CODE_MAX_ATTEMPTS = 5
+# 同じメールアドレスへの送信回数（メール爆撃・コードの総当たり対策）
+EMAIL_CODE_SEND_RATE_LIMIT_PER_EMAIL = (5, 60 * 60)
+# コードの入力（IP ごと）
+EMAIL_CODE_VERIFY_RATE_LIMIT_PER_IP = (30, 15 * 60)
+RESEND_API_URL = "https://api.resend.com/emails"
+MAIL_TIMEOUT_SECONDS = 10
+APP_NAME = "Scratch prd"
 # 計測イベントの受信（セッションごと）
 EVENTS_RATE_LIMIT_PER_SESSION = (300, 60 * 60)
 
@@ -176,7 +205,7 @@ USER_AGENT_MAX_CHARS = 500
 # フォールバック PRD で各メモから抜き出す本文の最大文字数
 MOCK_FACT_MAX_CHARS = 100
 
-DEFAULT_PROJECT_NAME = "Idea Workspace"
+DEFAULT_PROJECT_NAME = "Scratch prd"
 
 # 以下は src/config の値と揃える
 UNTITLED_NOTE_LABEL = "無題のメモ"

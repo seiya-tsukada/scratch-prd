@@ -15,6 +15,7 @@ const SERVER_ONLY_ENV = [
   'DATABASE_URL_DIRECT',
   'GEMINI_API_KEY',
   'CRON_SECRET',
+  'RESEND_API_KEY',
 ];
 // 秘密ではない（短い・ありふれた）値は誤検知になるので除く
 const MIN_SECRET_LENGTH = 8;

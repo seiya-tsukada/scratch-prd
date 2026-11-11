@@ -30,7 +30,9 @@ os.environ.update(
 )
 
 # ruff: noqa: E402  環境変数を設定してからアプリを読み込む
+import re
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any
 
 import psycopg
@@ -39,6 +41,7 @@ from fastapi.testclient import TestClient
 
 from backend.app import config
 from backend.app.main import app
+from backend.app.services import mailer
 from backend.scripts.db_reset import reset_database
 
 
@@ -64,6 +67,36 @@ def db_admin(database_url: str) -> Iterator[psycopg.Connection[Any]]:
         yield conn
         for table in ["users", "rate_limit_buckets", "events", "ai_generations", "email_login_tokens", "oauth_states"]:
             conn.execute(f"delete from scratch_prd.{table}")
+
+
+@dataclass(frozen=True)
+class SentMail:
+    to: str
+    subject: str
+    text: str
+
+
+# テスト中に送られたメール（mailer.send_email を置き換えて記録する。外部には送らない）
+SENT_MAILS: list[SentMail] = []
+
+
+@pytest.fixture(autouse=True)
+def outbox(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[SentMail]]:
+    async def fake_send_email(to: str, subject: str, text: str) -> None:
+        SENT_MAILS.append(SentMail(to, subject, text))
+
+    SENT_MAILS.clear()
+    monkeypatch.setattr(mailer, "send_email", fake_send_email)
+    yield SENT_MAILS
+    SENT_MAILS.clear()
+
+
+def last_code(email: str) -> str:
+    """email 宛てに最後に送られた確認コード"""
+    mail = next(m for m in reversed(SENT_MAILS) if m.to == email)
+    match = re.search(rf"^\s*(\d{{{config.EMAIL_CODE_DIGITS}}})\s*$", mail.text, re.MULTILINE)
+    assert match, mail.text
+    return match.group(1)
 
 
 @pytest.fixture

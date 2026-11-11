@@ -36,25 +36,47 @@ def display_name_or_none(value: str | None) -> str | None:
 
 
 class RegisterRequest(CamelModel):
-    """今のゲストをメールアドレス + パスワードの正規ユーザーにする"""
+    """今のゲストをメールアドレス + パスワードの正規ユーザーにする（1 段階目。確認コードをメールで送る）"""
 
     email: str = Field(max_length=config.MAX_EMAIL_CHARS + 20)
     password: str = Field(max_length=config.MAX_PASSWORD_CHARS + 1)
-    display_name: str | None = Field(default=None, max_length=config.MAX_DISPLAY_NAME_CHARS)
 
     _email = field_validator("email")(normalize_email)
     _password = field_validator("password")(checked_password)
-    _display_name = field_validator("display_name")(display_name_or_none)
 
 
 class LoginRequest(CamelModel):
-    """guest_data: 今のゲストにデータがあるとき、統合する（merge）か破棄する（discard）か"""
+    """メールアドレス + パスワードを確かめる（1 段階目。確認コードをメールで送る）"""
 
     email: str = Field(max_length=config.MAX_EMAIL_CHARS + 20)
     password: str = Field(min_length=1, max_length=config.MAX_PASSWORD_CHARS)
-    guest_data: Literal["merge", "discard"] | None = None
 
     _email = field_validator("email")(normalize_email)
+
+
+class VerificationStarted(CamelModel):
+    """確認コードを送った。verification_id は 2 段階目でコードと一緒に送り返す"""
+
+    verification_id: str
+    email: str
+    code_length: int
+    expires_in_seconds: int
+
+
+class RegisterVerifyRequest(CamelModel):
+    verification_id: str = Field(min_length=1, max_length=100)
+    code: str = Field(min_length=1, max_length=20)
+
+    @field_validator("code")
+    @classmethod
+    def _strip_code(cls, value: str) -> str:
+        return "".join(value.split())
+
+
+class LoginVerifyRequest(RegisterVerifyRequest):
+    """guest_data: 今のゲストにデータがあるとき、統合する（merge）か破棄する（discard）か"""
+
+    guest_data: Literal["merge", "discard"] | None = None
 
 
 class AccountUpdate(CamelModel):

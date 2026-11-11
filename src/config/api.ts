@@ -43,7 +43,9 @@ export const API_ENDPOINTS = {
   AUTH_ME: '/api/auth/me',
   AUTH_LOGOUT: '/api/auth/logout',
   AUTH_REGISTER: '/api/auth/register',
+  AUTH_REGISTER_VERIFY: '/api/auth/register/verify',
   AUTH_LOGIN: '/api/auth/login',
+  AUTH_LOGIN_VERIFY: '/api/auth/login/verify',
   ACCOUNT: '/api/account',
   ACCOUNT_PASSWORD: '/api/account/password',
   ACCOUNT_ONBOARDING: '/api/account/onboarding',
@@ -66,16 +68,31 @@ export interface MeResponse {
   user: SessionUser;
 }
 
+/** 登録・ログインの 1 段階目。正しければ確認コードがメールで届く（VerificationStarted） */
 export interface RegisterRequest {
   email: string;
   password: string;
-  displayName?: string;
+}
+
+export type LoginRequest = RegisterRequest;
+
+/** 確認コードを送った（backend/app/models/auth.py の VerificationStarted） */
+export interface VerificationStarted {
+  /** 2 段階目でコードと一緒に送り返す */
+  verificationId: string;
+  email: string;
+  codeLength: number;
+  expiresInSeconds: number;
+}
+
+/** 登録・ログインの 2 段階目 */
+export interface VerifyCodeRequest {
+  verificationId: string;
+  code: string;
 }
 
 /** 今のゲストにデータがあるときは guestData で統合（merge）か破棄（discard）を指定する */
-export interface LoginRequest {
-  email: string;
-  password: string;
+export interface LoginVerifyRequest extends VerifyCodeRequest {
   guestData?: 'merge' | 'discard';
 }
 
@@ -97,6 +114,9 @@ export type ApiErrorCode =
   | 'invalid_credentials'
   | 'invalid_password'
   | 'guest_data_exists'
+  | 'invalid_code'
+  | 'verification_expired'
+  | 'email_unavailable'
   | 'tag_exists';
 
 export interface QuotaExceededDetail {
