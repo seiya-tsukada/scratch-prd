@@ -30,7 +30,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await pool.close()
 
 
-app = FastAPI(title="Idea Workspace API", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
+app = FastAPI(title="Scratch prd API", docs_url=None, redoc_url=None, openapi_url=None, lifespan=lifespan)
 
 
 # 画面は自分のオリジンだけを読み込む

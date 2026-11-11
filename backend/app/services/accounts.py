@@ -43,21 +43,25 @@ class Credentials:
     onboarding_done: bool
 
 
-async def register_guest(conn: Conn, guest_id: UUID, email: str, password: str, display_name: str | None) -> None:
-    """ゲストの users 行をそのまま正規ユーザーにする（データは移さない）。呼び出し側のトランザクション内で実行する"""
+async def email_taken(conn: Conn, email: str) -> bool:
     cur = await conn.execute("select 1 from scratch_prd.users where email = %s", (email,))
-    if await cur.fetchone():
+    return await cur.fetchone() is not None
+
+
+async def register_guest(conn: Conn, guest_id: UUID, email: str, password_hash: str) -> None:
+    """ゲストの users 行をそのまま正規ユーザーにする（データは移さない）。password_hash は Argon2id のハッシュ。
+    呼び出し側のトランザクション内で実行する"""
+    if await email_taken(conn, email):
         raise EmailTakenError
-    password_hash = passwords.hash_password(password)
     try:
         cur = await conn.execute(
             """
             update scratch_prd.users
-            set is_guest = false, email = %s, display_name = coalesce(%s, display_name), last_active_at = now()
+            set is_guest = false, email = %s, last_active_at = now()
             where id = %s and is_guest
             returning id
             """,
-            (email, display_name, guest_id),
+            (email, guest_id),
         )
         if await cur.fetchone() is None:
             raise AlreadyRegisteredError
@@ -75,17 +79,22 @@ async def register_guest(conn: Conn, guest_id: UUID, email: str, password: str, 
         raise EmailTakenError from e
 
 
+_CREDENTIALS_SELECT = """
+    select u.id as user_id, u.email::text as email, u.display_name, pc.password_hash,
+           u.onboarding_completed_at is not null as onboarding_done
+    from scratch_prd.users u
+    join scratch_prd.password_credentials pc on pc.user_id = u.id
+"""
+
+
 async def find_credentials(conn: Conn, email: str) -> Credentials | None:
-    cur = await conn.execute(
-        """
-        select u.id as user_id, u.email::text as email, u.display_name, pc.password_hash,
-               u.onboarding_completed_at is not null as onboarding_done
-        from scratch_prd.users u
-        join scratch_prd.password_credentials pc on pc.user_id = u.id
-        where u.email = %s and not u.is_guest
-        """,
-        (email,),
-    )
+    cur = await conn.execute(_CREDENTIALS_SELECT + " where u.email = %s and not u.is_guest", (email,))
+    row = await cur.fetchone()
+    return Credentials(**row) if row else None
+
+
+async def find_credentials_by_id(conn: Conn, user_id: UUID) -> Credentials | None:
+    cur = await conn.execute(_CREDENTIALS_SELECT + " where u.id = %s and not u.is_guest", (user_id,))
     row = await cur.fetchone()
     return Credentials(**row) if row else None
 

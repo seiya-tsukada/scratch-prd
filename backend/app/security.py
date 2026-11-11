@@ -33,6 +33,12 @@ def hash_ip(ip: str) -> bytes:
     return _hash("ip", ip)
 
 
+def hash_email_code(verification_token: str, code: str) -> bytes:
+    """メールの確認コードの保存形式。コードは桁数が少ないため、画面にだけ渡す確認 ID（乱数）と組にして
+    ハッシュする（DB が漏れても確認 ID なしではコードを総当たりで戻せない）"""
+    return _hash("email_code", f"{verification_token}:{code}")
+
+
 def client_ip(request: Request) -> str | None:
     if config.get_settings().trust_proxy_headers:
         forwarded = request.headers.get("x-forwarded-for")

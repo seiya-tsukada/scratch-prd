@@ -1,7 +1,7 @@
 [project]
 name = "idea-workspace-backend"
 version = "0.0.0"
-description = "Idea Workspace の Python バックエンド"
+description = "Scratch prd の Python バックエンド"
 requires-python = ">=3.12"
 dependencies = [
   "argon2-cffi>=25.1",

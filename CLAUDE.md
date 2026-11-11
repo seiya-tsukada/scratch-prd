@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Idea Workspace（scratch-prd）で作業する Claude Code 向けのガイド。
+Scratch prdで作業する Claude Code 向けのガイド。
 思いつきのメモを、開発・検証できる PRD へ育てる個人向けワークスペース。
 **アカウント登録は任意**で、未登録（ゲスト）でも全機能を使える。差がつくのは AI 利用上限だけ。
 
@@ -38,7 +38,7 @@ Vercel（同一リポジトリ・同一ドメイン）
 
 | データ | 置き場所 |
 |---|---|
-| ユーザー・認証（users, user_identities, sessions, email_login_tokens, oauth_states） | `scratch_prd` |
+| ユーザー・認証（users, user_identities, sessions, email_verification_codes, email_login_tokens, oauth_states） | `scratch_prd` |
 | ユーザーデータ（projects, notes, prd_documents, prd_versions, workspace_preferences） | `scratch_prd` |
 | コンテンツ（sample_contents） | `scratch_prd`（デプロイ無しで初回体験を調整するため） |
 | グロース計測（events, ai_generations, api_usage） | `scratch_prd` |
@@ -49,9 +49,10 @@ Vercel（同一リポジトリ・同一ドメイン）
 
 - 初回アクセス（セッション無し）では最初に「アカウントを作成 / ログイン / アカウントを作らずに始める」を選ぶ画面を出す。「作らずに始める」で `POST /api/auth/guest`（IP ごとの回数制限あり。bot 対策の Turnstile は使わない）→ `users(is_guest=true)` を作成しサンプルを複製。「アカウントを作成」も先にゲストを作ってから昇格させる。データは最初から DB に保存する。選んだ後はそのままワークスペースを開く（PRD 生成の初回案内は廃止）。
 - 登録は**メールアドレス + パスワード**（Phase 5。メールのマジックリンク・Google OAuth は保留）。**同じ users 行を昇格**させるのでデータ移行は不要。
-- 既存アカウントにログインしたとき、ゲストにデータがあれば確認のうえ統合（merge）か破棄（discard）してからログインする（`POST /api/auth/login` の `guestData`）。ゲストのデータがサンプルのまま（`accounts.guest_is_untouched`）なら確認せずに破棄する。
+- 登録・ログインとも、メールに送った 6 桁の確認コードで 2 段階目を確かめる（Resend。`services/email_codes.py`・`services/mailer.py`）。1 段階目は確認コードを送るだけで、ログイン・昇格は 2 段階目（`/verify`）で行う。
+- 既存アカウントにログインしたとき、ゲストにデータがあれば確認のうえ統合（merge）か破棄（discard）してからログインする（`POST /api/auth/login/verify` の `guestData`）。ゲストのデータがサンプルのまま（`accounts.guest_is_untouched`）なら確認せずに破棄する。
 - 昇格・ログイン時はセッショントークンを再発行する。パスワードは Argon2id のハッシュのみ保存する。
-- メールアドレスの確認・パスワード再設定は未実装（画面で明示している）。
+- パスワード再設定は未実装（画面で明示している）。
 
 ---
 
@@ -126,7 +127,7 @@ npm run docker:db-reset                             # 開発用 DB を空から�
 
 - `migrate` は `db_migrate`。マイグレーションと seed を毎回冪等に適用する（データは消さない）。
 - コンテナ内の接続先・Cookie・Origin は `docker-compose.yml` の `api.environment` で固定している（`.env` より優先）。ポートは `.env` の `DB_PORT` などで変える。
-- 通知（メール送信など）はローカルでは再現しない。通知を実装するときも、ローカルでは送信せずログに出すだけにする。
+- 通知（メール送信など）はローカルでは再現しない。通知を実装するときも、ローカルでは送信せずログに出すだけにする（確認コードは API のログに出る）。
 
 ホストで動かす場合:
 
@@ -161,6 +162,7 @@ uv run ruff check backend api && uv run ruff format --check backend api && uv ru
 アカウント（Phase 5〜）:
 
 - 登録・ログイン・統合は `backend/app/services/accounts.py`、アカウント設定は `routers/account.py`、定期処理は `routers/cron.py`（`CRON_SECRET`。任意で、未設定の間は 401 を返して何もしない）。
+- メール送信は `mailer.send_email` だけを通す（ローカルはログ出力のみ。テストは `conftest.py` の `outbox` が置き換え、`last_code` でコードを取り出す）。確認コードは `email_codes` でハッシュ化して保存し、平文を DB に残さない。
 - ログイン系は `rate_limit.enforce_rate_limit`（IP・メールアドレスごと、キーはハッシュ）を通す。失敗の文言でメールアドレスの有無を区別しない。
 - フロントのログイン中ユーザーは `useSession()`（`GuestGate` の context）。別ユーザーに切り替わったときはページを読み直す。
 

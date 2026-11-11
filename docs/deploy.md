@@ -38,6 +38,8 @@ Vercel の Project Settings → Environment Variables で、環境ごとに設�
 | `COOKIE_SECURE` | `true` | `false` | `true` で Cookie 名が `__Host-iws_session` になり HSTS を付ける |
 | `TRUST_PROXY_HEADERS` | `true` | `false` | `x-forwarded-for` を信頼する（Vercel が上書きするため） |
 | `CRON_SECRET` | 任意（現在は設定しない）。設定するなら 16 文字以上のランダム文字列 | 任意 | `GET /api/cron/cleanup` の認証。未設定の間は Cron がすべて 401 になり、使われていないゲスト・期限切れセッションの掃除が動かない |
+| `RESEND_API_KEY` | **必須**（Resend の API キー。Sending access で可） | 不要（設定しても送信しない） | 登録・ログインの確認コードのメール送信。未設定だと登録・ログインが 503 `email_unavailable` になる。ローカルではコードを API のログに出す |
+| `MAIL_FROM` | **必須**。Resend で認証済みのドメインのアドレス（例 `Scratch prd <info@scratch-prd.app>`） | 不要（設定しても送信しない） | 確認コードのメールの送信元。未設定だと登録・ログインが 503 `email_unavailable` になる |
 | `GEMINI_API_KEY` | 任意 | 任意 | 未設定なら内蔵ジェネレータで応答（`usedFallback: true`） |
 | `GEMINI_MODEL` | 任意（既定 `gemini-3.8-flash`） | 任意 | |
 
@@ -50,7 +52,18 @@ Vercel の Project Settings → Environment Variables で、環境ごとに設�
 python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 ```
 
-> 指示書にあった `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `RESEND_API_KEY` / `MAIL_FROM` / `APP_BASE_URL` は、メール送信・Google ログインを保留しているため不要（[migration-plan.md](migration-plan.md) Phase 5 の保留事項）。
+> 指示書にあった `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `APP_BASE_URL` は、Google ログイン・マジックリンクを保留しているため不要（[migration-plan.md](migration-plan.md) Phase 5 の保留事項）。
+
+### メール送信（Resend）
+
+Resend は**認証済みのドメインからしか送れない**（未認証のドメインのアドレスを `MAIL_FROM` にすると 403。画面には「確認コードのメールを送信できませんでした」と出る）。
+`RESEND_API_KEY` と `MAIL_FROM` のどちらかが未設定なら、登録・ログインは 503 `email_unavailable` になる（ゲストとしての利用はできる）。
+
+- [ ] ドメイン（例 `scratch-prd.app`）を用意する
+- [ ] Resend の Domains でドメインを追加し、表示された DNS レコード（SPF・DKIM）を設定して Verified にする
+- [ ] Resend で API キー（Sending access）を作り、Vercel の `RESEND_API_KEY` に設定する（Production・Preview）
+- [ ] Vercel の `MAIL_FROM` に、そのドメインのアドレス（例 `Scratch prd <info@scratch-prd.app>`）を設定する（Production・Preview）
+- [ ] 再デプロイして、登録で確認コードのメールが届くことを確かめる
 
 ## 初回セットアップ チェックリスト
 
@@ -77,7 +90,7 @@ python3 -c "import secrets; print(secrets.token_urlsafe(48))"
 3. 画面を開き、ゲストとして始まる（サンプルのプロジェクトが出る）
 4. メモを作成・編集し、再読み込みしても残っている
 5. PRD を生成できる（`GEMINI_API_KEY` が無ければ「内蔵ジェネレータで作成しました」と表示される）
-6. 「登録してデータを保護」からメールアドレス + パスワードで登録できる。別のブラウザでログインして同じデータが見える
+6. 「登録してデータを保護」からメールアドレス + パスワードで登録でき、メールに届いた確認コードで登録が完了する。別のブラウザでログイン（確認コードあり）して同じデータが見える
 7. 画面の URL（例 `/projects/xxx`）を直接開いても画面が出る。存在しない `/api/...` は 404 になる
 8. レスポンスヘッダーに `Content-Security-Policy`・`Strict-Transport-Security` が付いている
 9. Vercel の Cron Jobs タブで `/api/cron/cleanup` が登録されている。手動で確認する場合:

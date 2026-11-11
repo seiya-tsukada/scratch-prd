@@ -37,6 +37,9 @@ const CODE_MESSAGES: Record<string, string> = {
   invalid_credentials: 'メールアドレスまたはパスワードが正しくありません。',
   invalid_password: 'パスワードが正しくありません。',
   not_registered: 'アカウント登録後に利用できます。',
+  invalid_code: '確認コードが正しくありません。',
+  verification_expired: '確認コードの有効期限が切れたか、入力できる回数を超えました。コードを再送してください。',
+  email_unavailable: '確認コードのメールを送信できませんでした。しばらく待ってからお試しください。',
 };
 
 const QUOTA_KIND_LABELS: Record<QuotaExceededDetail['kind'], string> = {

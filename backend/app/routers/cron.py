@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from backend.app import config
 from backend.app.db import Db
+from backend.app.services import email_codes
 
 router = APIRouter(prefix="/cron")
 
@@ -31,7 +32,12 @@ async def cleanup(request: Request, db: Db) -> dict[str, int]:
     cur = await db.execute("select * from scratch_prd.cleanup_expired_auth()")
     auth = await cur.fetchone()
     assert guests is not None and auth is not None
-    return {"guestsDeleted": int(guests["guests"]), **{_camel(k): int(v) for k, v in auth.items()}}
+    codes = await email_codes.cleanup(db)
+    return {
+        "guestsDeleted": int(guests["guests"]),
+        **{_camel(k): int(v) for k, v in auth.items()},
+        "emailVerificationCodesDeleted": codes,
+    }
 
 
 def _camel(name: str) -> str:

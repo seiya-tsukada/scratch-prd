@@ -45,7 +45,7 @@ def test_facts_per_note() -> None:
 def test_detail_label_and_project_name_fallback() -> None:
     md = generate_mock_prd(request(detailLevel="brief", projectName="")).markdown
     assert "詳細度: **簡易**" in md
-    assert md.startswith("# Idea Workspace — ")
+    assert md.startswith("# Scratch prd — ")
 
 
 def test_first_line_without_heading_marks_in_background() -> None:

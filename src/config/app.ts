@@ -1,6 +1,6 @@
 import type { PaneCount, PaneInfo } from '../types';
 
-export const APP_NAME = 'Idea Workspace';
+export const APP_NAME = 'Scratch prd';
 
 /** プロジェクト名が取得できないときの表示名 */
 export const FALLBACK_PROJECT_NAME = 'アイデア';
