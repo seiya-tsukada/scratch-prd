@@ -13,7 +13,7 @@ from backend.app import config
 
 from .conftest import SENT_MAILS, last_code, login_guest
 
-PASSWORD = "correct horse battery"
+PASSWORD = "correcthorse42"
 COOKIE = config.SESSION_COOKIE_NAME
 
 
@@ -121,6 +121,13 @@ def test_registered_session_uses_registered_ttl(registered: TestClient) -> None:
         {"email": "a@example.com", "password": "x" * (config.MAX_PASSWORD_CHARS + 1)},
         {"email": "a@example.com", "password": "Password123"},
         {"email": "a@example.com", "password": "aaaaaaaaaaaa"},
+        {"email": "a@example.com", "password": "abc1234"},
+        {"email": "a@example.com", "password": "abcd1234"},
+        {"email": "a@example.com", "password": "Correcthorse42"},
+        {"email": "a@example.com", "password": "correct-horse42"},
+        {"email": "a@example.com", "password": "correct horse42"},
+        {"email": "a@example.com", "password": "correcthorse４２"},
+        {"email": "a@example.com", "password": "パスワード12345"},
     ],
 )
 def test_register_validates_email_and_password(guest_client: TestClient, body: dict[str, str]) -> None:
@@ -176,6 +183,12 @@ def test_login_failure_does_not_reveal_which_part_is_wrong(
     response = login(make_client(), email=email, password=password)
     assert response.status_code == 401
     assert response.json()["detail"] == {"code": "invalid_credentials"}
+
+
+def test_login_does_not_apply_new_password_rules(registered: TestClient, make_client: Any) -> None:
+    """以前の規則（大文字・記号・空白を許していた）で登録したパスワードでもログインを試せる（422 にしない）"""
+    response = start_login(make_client(), password="Correct Horse Battery!")
+    assert response.status_code == 401
 
 
 def test_guest_cannot_log_in_with_password(guest_client: TestClient, make_client: Any) -> None:
@@ -481,24 +494,20 @@ def test_change_password_revokes_other_sessions(registered: TestClient, make_cli
     login(other)
 
     wrong = registered.post(
-        "/api/account/password", json={"currentPassword": "nope nope nope", "newPassword": "brand new password"}
+        "/api/account/password", json={"currentPassword": "nope nope nope", "newPassword": "brandnew2026"}
     )
     assert wrong.status_code == 403
 
-    ok = registered.post(
-        "/api/account/password", json={"currentPassword": PASSWORD, "newPassword": "brand new password"}
-    )
+    ok = registered.post("/api/account/password", json={"currentPassword": PASSWORD, "newPassword": "brandnew2026"})
     assert ok.status_code == 204
     assert registered.get("/api/auth/me").status_code == 200
     assert other.get("/api/auth/me").status_code == 401
-    assert login(make_client(), password="brand new password").status_code == 200
+    assert login(make_client(), password="brandnew2026").status_code == 200
     assert login(make_client()).status_code == 401
 
 
 def test_guest_cannot_change_password(guest_client: TestClient) -> None:
-    response = guest_client.post(
-        "/api/account/password", json={"currentPassword": "x", "newPassword": "brand new password"}
-    )
+    response = guest_client.post("/api/account/password", json={"currentPassword": "x", "newPassword": "brandnew2026"})
     assert response.status_code == 409
 
 

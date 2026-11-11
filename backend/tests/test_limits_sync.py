@@ -28,6 +28,16 @@ def test_input_limits_match_frontend() -> None:
     }
 
 
+def test_password_rules_match_frontend() -> None:
+    source = TS_API_CONFIG.read_text(encoding="utf-8")
+    block = re.search(r"export const PASSWORD_RULES = \{(.*?)\} as const", source, re.S)
+    assert block, "PASSWORD_RULES が src/config/api.ts に見つかりません"
+    numbers = dict(re.findall(r"(MIN_CHARS|MAX_CHARS):\s*(\d+)", block.group(1)))
+    pattern = re.search(r"PATTERN:\s*'([^']*)'", block.group(1))
+    assert numbers == {"MIN_CHARS": str(config.MIN_PASSWORD_CHARS), "MAX_CHARS": str(config.MAX_PASSWORD_CHARS)}
+    assert pattern and pattern.group(1) == config.PASSWORD_PATTERN
+
+
 def test_tag_limits_and_colors_match_frontend() -> None:
     source = TS_TAGS_CONFIG.read_text(encoding="utf-8")
     block = re.search(r"export const TAG_LIMITS = \{(.*?)\}", source, re.S)

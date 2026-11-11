@@ -253,6 +253,8 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({ initialMode, isGuest, on
                 required
                 minLength={mode === 'register' ? PASSWORD_RULES.MIN_CHARS : 1}
                 maxLength={PASSWORD_RULES.MAX_CHARS}
+                pattern={mode === 'register' ? PASSWORD_RULES.PATTERN : undefined}
+                title={mode === 'register' ? `${PASSWORD_RULES.MIN_CHARS}文字以上、${PASSWORD_RULES.HINT}` : undefined}
                 autoComplete={mode === 'register' ? 'new-password' : 'current-password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -260,7 +262,7 @@ export const AuthDialog: React.FC<AuthDialogProps> = ({ initialMode, isGuest, on
               />
               {mode === 'register' && (
                 <span className="block text-[11px] text-zinc-400">
-                  {PASSWORD_RULES.MIN_CHARS}文字以上。よく使われるパスワードは使えません。
+                  {PASSWORD_RULES.MIN_CHARS}文字以上、{PASSWORD_RULES.HINT}。よく使われるパスワードは使えません。
                 </span>
               )}
             </label>

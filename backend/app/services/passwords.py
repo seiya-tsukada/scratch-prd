@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from functools import lru_cache
 
 from argon2 import PasswordHasher
@@ -12,9 +13,32 @@ from backend.app import config
 # argon2-cffi の既定値（RFC 9106 の低メモリ設定: m=64MiB, t=3, p=4）。OWASP の最低基準を上回る
 _hasher = PasswordHasher()
 
-# よく使われるパスワード（長さの条件を満たしていても拒否する）
+# よく使われるパスワード（長さ・文字の条件を満たしていても拒否する）
 COMMON_PASSWORDS = frozenset(
     {
+        "12345678",
+        "123456789",
+        "87654321",
+        "11111111",
+        "00000000",
+        "password",
+        "password1",
+        "iloveyou",
+        "qwertyui",
+        "qwerty12",
+        "qwerty123",
+        "abcdefgh",
+        "abcd1234",
+        "abc12345",
+        "1q2w3e4r",
+        "1qaz2wsx",
+        "asdfghjk",
+        "sunshine",
+        "princess",
+        "football",
+        "baseball",
+        "superman",
+        "trustno1",
         "1234567890",
         "12345678910",
         "0123456789",
@@ -74,6 +98,8 @@ def password_problem(password: str) -> str | None:
         return f"Password must be at least {config.MIN_PASSWORD_CHARS} characters"
     if len(password) > config.MAX_PASSWORD_CHARS:
         return f"Password must be at most {config.MAX_PASSWORD_CHARS} characters"
-    if password.lower() in COMMON_PASSWORDS or len(set(password)) < 3:
+    if not re.fullmatch(config.PASSWORD_PATTERN, password):
+        return "Password must contain only lowercase letters (a-z) and digits (0-9)"
+    if password in COMMON_PASSWORDS or len(set(password)) < 3:
         return "Password is too common"
     return None

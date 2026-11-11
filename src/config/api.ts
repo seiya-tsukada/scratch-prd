@@ -52,7 +52,13 @@ export const API_ENDPOINTS = {
 } as const;
 
 /** パスワードの条件（backend/app/config.py と同じ） */
-export const PASSWORD_RULES = { MIN_CHARS: 10, MAX_CHARS: 128 } as const;
+export const PASSWORD_RULES = {
+  MIN_CHARS: 8,
+  MAX_CHARS: 128,
+  /** 使える文字は英小文字と数字だけ（input の pattern 属性にも使う） */
+  PATTERN: '[a-z0-9]+',
+  HINT: '英小文字（a-z）と数字（0-9）のみ',
+} as const;
 
 /** ログイン中のユーザー（backend/app/models/auth.py の MeUser） */
 export interface SessionUser {
