@@ -468,7 +468,7 @@ def test_mail_failure_returns_503_and_discards_code(
 ) -> None:
     from backend.app.services import mailer
 
-    async def failing_send(to: str, subject: str, text: str) -> None:
+    async def failing_send(to: str, subject: str, text: str, html: str | None = None) -> None:
         raise mailer.MailError("down")
 
     monkeypatch.setattr(mailer, "send_email", failing_send)

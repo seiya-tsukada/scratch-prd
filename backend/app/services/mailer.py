@@ -19,7 +19,8 @@ class MailError(Exception):
     pass
 
 
-async def send_email(to: str, subject: str, text: str) -> None:
+async def send_email(to: str, subject: str, text: str, html: str | None = None) -> None:
+    """text は必須（HTML を表示できないメールソフト向け）。html があれば一緒に送る"""
     settings = config.get_settings()
     if settings.vercel_env is None:
         logger.warning("[mail] ローカルのため送信しません\nTo: %s\nSubject: %s\n\n%s", to, subject, text)
@@ -34,6 +35,10 @@ async def send_email(to: str, subject: str, text: str) -> None:
         logger.error("[mail] MAIL_FROM が未設定のため送信できません")
         raise MailError("MAIL_FROM is not set")
 
+    payload: dict[str, object] = {"from": mail_from, "to": [to], "subject": subject, "text": text}
+    if html is not None:
+        payload["html"] = html
+
     try:
         async with httpx.AsyncClient(timeout=config.MAIL_TIMEOUT_SECONDS) as client:
             response = await client.post(
@@ -43,7 +48,7 @@ async def send_email(to: str, subject: str, text: str) -> None:
                     # タイムアウト後の再試行で二重に送らないよう、送信 1 回ごとに一意にする
                     "Idempotency-Key": str(uuid.uuid4()),
                 },
-                json={"from": mail_from, "to": [to], "subject": subject, "text": text},
+                json=payload,
             )
     except httpx.HTTPError as e:
         logger.error("[mail] Resend への接続に失敗しました: %s", type(e).__name__)

@@ -107,3 +107,24 @@ def test_resend_error_is_an_error(settings_env: Any, monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(httpx, "AsyncClient", client)
     with pytest.raises(mailer.MailError):
         send()
+
+
+def test_sends_html_when_given(settings_env: Any, requests: list[httpx.Request]) -> None:
+    settings_env(VERCEL_ENV="preview", RESEND_API_KEY="re_test", MAIL_FROM="Scratch prd <info@example.com>")
+    asyncio.run(REAL_SEND_EMAIL("alice@example.com", "件名", "本文", "<p>本文</p>"))
+    body = json.loads(requests[0].content)
+    assert body["text"] == "本文"
+    assert body["html"] == "<p>本文</p>"
+
+
+def test_verification_mail_format() -> None:
+    from backend.app.services import email_codes
+
+    subject, text, html_body = email_codes.build_mail("a<b>@example.com", "register", "473270")
+    assert subject == f"【{config.APP_NAME}】確認コード: 473270"
+    assert "a<b> さん、" in text
+    assert "    473270\n" in text
+    assert "a&lt;b&gt; さん、" in html_body  # 宛名はエスケープする
+    assert "473270" in html_body
+    _, login_text, _ = email_codes.build_mail("bob@example.com", "login", "000123")
+    assert "ログイン" in login_text
