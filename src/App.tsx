@@ -13,8 +13,6 @@ import { LegacyImportDialog } from './components/LegacyImportDialog';
 import { AuthDialog, AuthMode } from './components/AuthDialog';
 import { AccountDialog } from './components/AccountDialog';
 import { SignupPrompt } from './components/SignupPrompt';
-import { finishOnboarding } from './services/session';
-import { shouldShowOnboarding } from './utils/onboarding';
 import {
   answeredDecisions,
   buildPreviousPrd,
@@ -117,11 +115,8 @@ export default function App() {
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>('notes');
   const [isTagManagerOpen, setIsTagManagerOpen] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
-  // PRD 生成ダイアログ。entry は開き方（ヘッダー・再生成 / 初回の案内）、basePrdId は再生成の元にする PRD
-  const [prdGenerator, setPrdGenerator] = useState<{
-    entry: 'default' | 'onboarding';
-    basePrdId: string | null;
-  } | null>(null);
+  // PRD 生成ダイアログ。basePrdId は再生成の元にする PRD
+  const [prdGenerator, setPrdGenerator] = useState<{ basePrdId: string | null } | null>(null);
   const [activePrdId, setActivePrdId] = useState<string | null>(null);
   // 直前の PRD 生成が内蔵ジェネレータによるものだった場合に、ビューアで知らせる
   const [prdFallback, setPrdFallback] = useState<{ prdId: string; reason: FallbackReason } | null>(null);
@@ -129,7 +124,6 @@ export default function App() {
   const [authMode, setAuthMode] = useState<AuthMode | null>(null);
   const [isAccountOpen, setIsAccountOpen] = useState(false);
   const [signupPrompt, setSignupPrompt] = useState<SignupPromptTrigger | null>(null);
-  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
   // 同じきっかけで何度も出さない（このページを開いている間）
   const shownPromptTriggers = useRef(new Set<SignupPromptTrigger>());
 
@@ -518,28 +512,7 @@ export default function App() {
       params
     );
 
-  // --- 貼り付けからの PRD 生成・初回の案内 ---
-  const showOnboarding =
-    prdGenerator === null &&
-    shouldShowOnboarding({
-      user,
-      hasProject: Boolean(currentProject),
-      hasPendingDialog: legacyProjects.length > 0,
-      dismissed: onboardingDismissed,
-    });
-
-  useEffect(() => {
-    if (loadState === 'ready' && showOnboarding) {
-      setPrdGenerator({ entry: 'onboarding', basePrdId: null });
-      track({ name: 'onboarding_started' });
-    }
-  }, [loadState, showOnboarding]);
-
-  const endOnboarding = (result: 'completed' | 'skipped') => {
-    setOnboardingDismissed(true);
-    setUser({ ...user, onboardingDone: true });
-    finishOnboarding(result).catch((e) => console.warn('案内の状態を保存できませんでした', e));
-  };
+  // --- 貼り付けからの PRD 生成 ---
 
   /** 貼り付けた内容をメモとして保存し、そのメモだけから PRD を作る */
   const handleGeneratePrdFromText = async ({ title, content, mode, detailLevel }: PrdGenerateFromTextParams) => {
@@ -548,7 +521,7 @@ export default function App() {
     addNote(note);
     handleOpenNoteInActivePane(note.id);
     await generatePrdFromNotes([note], { mode, detailLevel });
-    if (prdGenerator?.entry !== 'onboarding') track({ name: 'quick_prd_used' });
+    track({ name: 'quick_prd_used' });
   };
 
   const closePrdViewer = () => {
@@ -579,13 +552,10 @@ export default function App() {
   const openPrdGenerator = (basePrdId: string | null) => {
     // ビューアの上に重ねると操作できないため閉じる（生成後に結果のビューアを開く）
     closePrdViewer();
-    setPrdGenerator({ entry: 'default', basePrdId });
+    setPrdGenerator({ basePrdId });
   };
 
-  const closePrdGenerator = (generated: boolean) => {
-    if (prdGenerator?.entry === 'onboarding') endOnboarding(generated ? 'completed' : 'skipped');
-    setPrdGenerator(null);
-  };
+  const closePrdGenerator = () => setPrdGenerator(null);
 
   // --- 登録の案内（ゲストのみ。閉じたら一定期間は出さない） ---
   const offerSignup = useCallback(
@@ -793,8 +763,7 @@ export default function App() {
         existingPrds={prds}
         projectName={projectName}
         basePrdId={prdGenerator?.basePrdId}
-        initialSource={prdGenerator?.entry === 'onboarding' || notes.length === 0 ? 'paste' : 'notes'}
-        isOnboarding={prdGenerator?.entry === 'onboarding'}
+        initialSource={notes.length === 0 ? 'paste' : 'notes'}
         onClose={closePrdGenerator}
         onGenerate={handleGeneratePrd}
         onGenerateFromText={handleGeneratePrdFromText}

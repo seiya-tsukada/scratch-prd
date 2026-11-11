@@ -134,6 +134,34 @@ async def guest_data_summary(conn: Conn, guest_id: UUID) -> GuestDataSummary:
     return GuestDataSummary(projects=int(row["projects"]), notes=int(row["notes"]))
 
 
+async def guest_is_untouched(conn: Conn, guest_id: UUID) -> bool:
+    """ゲストのデータが作成時（サンプルの複製）のままか。
+    サンプルはゲスト作成と同じトランザクションで複製するので、作成・更新日時がゲストの作成日時より後の行があれば
+    ユーザーが手を加えたとみなす。サンプルの削除は判定しない（捨てても失われる内容が無いため）。
+    表示の設定（workspace_preferences）は内容ではないので見ない"""
+    cur = await conn.execute(
+        """
+        select not (
+          exists (select 1 from scratch_prd.projects
+                  where user_id = u.id and greatest(created_at, updated_at) > u.created_at)
+          or exists (select 1 from scratch_prd.notes
+                     where user_id = u.id and greatest(created_at, updated_at) > u.created_at)
+          or exists (select 1 from scratch_prd.prd_documents
+                     where user_id = u.id and greatest(created_at, updated_at) > u.created_at)
+          or exists (select 1 from scratch_prd.prd_versions where user_id = u.id and created_at > u.created_at)
+          or exists (select 1 from scratch_prd.tags
+                     where user_id = u.id and greatest(created_at, updated_at) > u.created_at)
+          or exists (select 1 from scratch_prd.note_tags where user_id = u.id and created_at > u.created_at)
+        ) as untouched
+        from scratch_prd.users u
+        where u.id = %s and u.is_guest
+        """,
+        (guest_id,),
+    )
+    row = await cur.fetchone()
+    return bool(row and row["untouched"])
+
+
 async def resolve_guest(conn: Conn, guest_id: UUID, target_id: UUID, action: Literal["merge", "discard"]) -> None:
     """ログイン時に、ゲストのデータを target に統合する（merge）か捨てる（discard）。最後にゲストを削除する。
     呼び出し側のトランザクション内で実行する"""

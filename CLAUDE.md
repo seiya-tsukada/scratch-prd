@@ -47,9 +47,9 @@ Vercel（同一リポジトリ・同一ドメイン）
 
 ### ゲストと登録
 
-- 初回アクセスで `POST /api/auth/guest`（IP ごとの回数制限あり。bot 対策の Turnstile は使わない）→ `users(is_guest=true)` を作成しサンプルを複製。データは最初から DB に保存する。
+- 初回アクセス（セッション無し）では最初に「アカウントを作成 / ログイン / アカウントを作らずに始める」を選ぶ画面を出す。「作らずに始める」で `POST /api/auth/guest`（IP ごとの回数制限あり。bot 対策の Turnstile は使わない）→ `users(is_guest=true)` を作成しサンプルを複製。「アカウントを作成」も先にゲストを作ってから昇格させる。データは最初から DB に保存する。選んだ後はそのままワークスペースを開く（PRD 生成の初回案内は廃止）。
 - 登録は**メールアドレス + パスワード**（Phase 5。メールのマジックリンク・Google OAuth は保留）。**同じ users 行を昇格**させるのでデータ移行は不要。
-- 既存アカウントにログインしたとき、ゲストにデータがあれば確認のうえ統合（merge）か破棄（discard）してからログインする（`POST /api/auth/login` の `guestData`）。
+- 既存アカウントにログインしたとき、ゲストにデータがあれば確認のうえ統合（merge）か破棄（discard）してからログインする（`POST /api/auth/login` の `guestData`）。ゲストのデータがサンプルのまま（`accounts.guest_is_untouched`）なら確認せずに破棄する。
 - 昇格・ログイン時はセッショントークンを再発行する。パスワードは Argon2id のハッシュのみ保存する。
 - メールアドレスの確認・パスワード再設定は未実装（画面で明示している）。
 
@@ -166,7 +166,7 @@ uv run ruff check backend api && uv run ruff format --check backend api && uv ru
 
 認証・セッション（Phase 3〜）:
 
-- 初回アクセスで `GuestGate` が `/api/auth/me` を確認し、無ければ `POST /api/auth/guest` でゲストを作る（IP ごとの回数制限 `config.GUEST_CREATE_RATE_*`）。
+- 初回アクセスで `GuestGate` が `/api/auth/me` を確認し、無ければ選択画面（welcome）を出す。ゲストは「作らずに始める」か登録の直前にだけ作る（IP ごとの回数制限 `config.GUEST_CREATE_RATE_*`）。利用中のセッション切れ（401）でも同じ選択画面を重ねる。
 - Cookie は `iws_session`（ローカル）/ `__Host-iws_session`（`COOKIE_SECURE=true`）。トークンは DB にハッシュでのみ保存。
 - 状態を変える API は `security.verify_origin`（`ALLOWED_ORIGINS`）を通す。ログインが必要な API は `sessions.CurrentUser` を受け取る。
 - Gemini など外部 API を待つエンドポイントでは `Db` ではなく `Pool` を受け取り、DB 接続は使う間だけ借りる（プール枯渇を防ぐ）。
@@ -187,7 +187,7 @@ Workspace API（Phase 4a〜）:
 - `VERCEL_ENV=production` では `config.Settings` がローカル用の値（localhost の DB・`COOKIE_SECURE=false` など）を拒否して起動しない。`DATABASE_URL` が未設定でも起動しない（モックは廃止した）。
 - セクションは廃止した。メモと PRD は別のエンティティで、サイドバーの「メモ」「PRD」タブにそれぞれ更新日時の降順で並ぶ。PRD は `source_note_ids` で生成元メモを参照する（メモを消しても PRD は残り、画面では「削除済み」と出す）。再生成は元の PRD を変えず、常に新しい PRD を作る。`generation_mode = 'unknown'` は旧データ（PRD セクションのメモ）から変換した PRD。
 - メモのタグはプロジェクト単位（`scratch_prd.tags` / `note_tags`）。名前は大文字小文字を区別せずユニーク（重複は 409 `tag_exists`）、色はパレットのキー（`src/config/tags.ts` と `config.TAG_COLORS`）。メモのタグは `PUT /api/notes/{id}/tags` で一覧ごと置き換え、メモの `updated_at` は変えない。PRD にはタグを付けない。
-- PRD 生成の入口は `PrdGeneratorModal` だけ（入力元は「メモから」と「テキストを貼り付け」。貼り付けた内容はメモにしてから使う）。初回の案内も同じダイアログを `isOnboarding` で開く。PRD 生成は `App.tsx` の `generatePrdFromNotes` に集約している。殴り書きの整形（`/api/structure-rough-note`）は廃止した（PRD 生成のプロンプトが整形を兼ねる）。
+- PRD 生成の入口は `PrdGeneratorModal` だけ（入力元は「メモから」と「テキストを貼り付け」。貼り付けた内容はメモにしてから使う）。PRD 生成は `App.tsx` の `generatePrdFromNotes` に集約している。殴り書きの整形（`/api/structure-rough-note`）は廃止した（PRD 生成のプロンプトが整形を兼ねる）。
 - 再生成では PRD 本文を AI に渡さず、`src/utils/prdLoop.ts` の `buildPreviousPrd` で作った要約（`previousPrd`）を渡す。未決事項への回答はタイトルが「決定: 〜」のメモで、タイトルの形式（`decisionTitle`）で回答済みを判定している（Phase 8）。サーバー側の秘密は `scripts/check-bundle-secrets.mjs` の `SERVER_ONLY_ENV` にも足す。
 
 AI（Phase 2〜）:

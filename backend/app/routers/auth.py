@@ -106,7 +106,8 @@ async def register(
 @router.post("/login", response_model_exclude_none=True)
 async def login(body: LoginRequest, request: Request, response: Response, db: Db, current: OptionalUser) -> MeResponse:
     """メールアドレス + パスワードでログインする。
-    今のセッションがデータのあるゲストなら、guestData（merge / discard）の指定が無い限り 409 guest_data_exists を返す"""
+    今のセッションがデータのあるゲストなら、guestData（merge / discard）の指定が無い限り 409 guest_data_exists を返す。
+    ゲストのデータがサンプルのまま（手を加えていない）なら、確認せずに捨てる"""
     await enforce_rate_limit(db, "login_ip", _client_ip_or_unknown(request), config.LOGIN_RATE_LIMIT_PER_IP)
     await enforce_rate_limit(db, "login_email", body.email, config.LOGIN_RATE_LIMIT_PER_EMAIL)
 
@@ -117,7 +118,7 @@ async def login(body: LoginRequest, request: Request, response: Response, db: Db
     guest = current if current is not None and current.is_guest else None
     if guest is not None and body.guest_data is None:
         summary = await accounts.guest_data_summary(db, guest.user_id)
-        if not summary.is_empty:
+        if not summary.is_empty and not await accounts.guest_is_untouched(db, guest.user_id):
             raise HTTPException(
                 status_code=409,
                 detail={"code": "guest_data_exists", "projects": summary.projects, "notes": summary.notes},

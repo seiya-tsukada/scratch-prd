@@ -176,6 +176,7 @@ def test_guest_with_data_must_choose_merge_or_discard(
 ) -> None:
     other = make_client()
     login_guest(other)
+    add_note(other, "ゲストのメモ")
     guest_id = other.get("/api/auth/me").json()["user"]["id"]
 
     response = login(other)
@@ -183,9 +184,51 @@ def test_guest_with_data_must_choose_merge_or_discard(
     assert response.status_code == 409
     detail = response.json()["detail"]
     assert detail["code"] == "guest_data_exists"
-    assert detail["projects"] == 1 and detail["notes"] == 5
+    assert detail["projects"] == 1 and detail["notes"] == 6
     # まだログインしていない（ゲストのまま）
     assert other.get("/api/auth/me").json()["user"]["id"] == guest_id
+
+
+def test_untouched_guest_is_discarded_without_asking(
+    registered: TestClient, make_client: Any, db_admin: psycopg.Connection[Any]
+) -> None:
+    """シナリオ: 登録しようとしてゲストができた → メールアドレスが登録済み → そのままログイン。
+    サンプルだけなら確認しない"""
+    other = make_client()
+    login_guest(other)
+    guest_id = other.get("/api/auth/me").json()["user"]["id"]
+    owner_id = registered.get("/api/auth/me").json()["user"]["id"]
+
+    response = login(other)
+
+    assert response.status_code == 200
+    assert response.json()["user"]["id"] == owner_id
+    assert db_admin.execute("select count(*) from scratch_prd.users where id = %s", (guest_id,)).fetchone() == (0,)
+
+
+@pytest.mark.parametrize(
+    "touch",
+    [
+        "update scratch_prd.notes set content = content || '!'"
+        " where id = (select id from scratch_prd.notes where user_id = %(g)s limit 1)",
+        "update scratch_prd.projects set name = 'renamed' where user_id = %(g)s",
+        "update scratch_prd.prd_documents set title = 'edited' where user_id = %(g)s",
+        "insert into scratch_prd.tags (user_id, project_id, name, color)"
+        " select user_id, id, 'tag', 'gray' from scratch_prd.projects where user_id = %(g)s",
+    ],
+)
+def test_touched_guest_still_asks(
+    registered: TestClient, make_client: Any, db_admin: psycopg.Connection[Any], touch: str
+) -> None:
+    other = make_client()
+    login_guest(other)
+    guest_id = other.get("/api/auth/me").json()["user"]["id"]
+    db_admin.execute(touch, {"g": guest_id})
+
+    response = login(other)
+
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "guest_data_exists"
 
 
 def test_login_merge_moves_guest_data_into_account(

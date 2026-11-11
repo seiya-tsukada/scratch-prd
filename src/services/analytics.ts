@@ -11,7 +11,6 @@ export type ClientEvent =
   | { name: 'prd_downloaded' }
   | { name: 'signup_prompt_shown'; properties: { trigger: SignupPromptTrigger } }
   | { name: 'signup_started'; properties: { method: 'password' } }
-  | { name: 'onboarding_started' }
   | { name: 'quick_prd_used' }
   | { name: 'open_question_answered' }
   | { name: 'prd_regenerated_with_answers'; properties: { answers: number } }
