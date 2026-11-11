@@ -173,7 +173,9 @@ GUEST_CREATE_RATE_WINDOW_SECONDS = 3600
 
 # メールアドレス + パスワードのログイン。登録・ログインのどちらもメールの確認コードで 2 段階目を確かめる
 MAX_EMAIL_CHARS = 254
-MIN_PASSWORD_CHARS = 10
+MIN_PASSWORD_CHARS = 8
+# 使える文字は英小文字と数字だけ（src/config/api.ts の PASSWORD_RULES.PATTERN と同じ。test_limits_sync.py で検証）
+PASSWORD_PATTERN = r"[a-z0-9]+"
 MAX_PASSWORD_CHARS = 128
 MAX_DISPLAY_NAME_CHARS = 100
 # 総当たり対策（回数, 秒）。キーは IP / メールアドレスの HMAC

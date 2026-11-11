@@ -132,7 +132,7 @@ export const AccountDialog: React.FC<AccountDialogProps> = ({ user, onClose, onU
               />
               <input
                 type="password"
-                placeholder={`新しいパスワード（${PASSWORD_RULES.MIN_CHARS}文字以上）`}
+                placeholder={`新しいパスワード（${PASSWORD_RULES.MIN_CHARS}文字以上、${PASSWORD_RULES.HINT}）`}
                 autoComplete="new-password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
